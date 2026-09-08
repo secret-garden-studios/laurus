@@ -54,6 +54,7 @@ export default function EffectUnitbar({
   const { coreState, dispatch } = useContext(CoreContext);
   const { uiState } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
+  const [isBarHovered, setIsBarHovered] = useState(false);
 
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
@@ -140,10 +141,13 @@ export default function EffectUnitbar({
       style={{
         height: "100%",
         background: "rgba(22, 22, 22, 0.9)",
-        display: "flex",
-        flexDirection: "column",
+        display: "grid",
+        alignContent: "start",
+        justifyContent: "center",
         ...dynamicSizes.toolbar,
       }}
+      onMouseEnter={() => setIsBarHovered(true)}
+      onMouseLeave={() => setIsBarHovered(false)}
     >
       <SvgRepo
         svg={(() => {
@@ -413,7 +417,7 @@ export default function EffectUnitbar({
       />
       <SvgRepo
         title={"disable"}
-        svg={effect.value.disabled ? circle("rgb(255, 255, 95)") : circle("rgba(255, 255, 255, 0.15)")}
+        svg={effect.value.disabled ? circle("rgb(255, 255, 95)") : circle("rgba(255, 255, 255, 0.05)")}
         scale={0.5}
         scaleToContaier={true}
         onContainerClick={async () => {
@@ -467,18 +471,22 @@ export default function EffectUnitbar({
         <>
           <SvgRepo
             title={"delete"}
-            svg={circle("rgb(220, 112, 112)")}
+            svg={isAltKeyPressed && isBarHovered ? circle("rgb(220, 112, 112)") : circle("rgba(255, 255, 255, 0.05)")}
             scale={0.5}
             scaleToContaier={true}
             onContainerClick={() => {
-              if (isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
+              setIsBarHovered(false);
+              if (!isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
               const confirmed = confirm("are you sure you want to delete this effect?");
               if (confirmed) {
                 deleteEffect(effect);
               }
             }}
+            style={{
+              cursor: isAltKeyPressed && isBarHovered && uiState.playbackMode.type == "stopped" ? "pointer" : "",
+            }}
             containerStyle={{
-              cursor: isAltKeyPressed ? "crosshair" : uiState.playbackMode.type !== "stopped" ? "" : "pointer",
+              cursor: "",
               width: dynamicSizes.toolbar.width,
               height: dynamicSizes.toolbar.width,
               background: "none",

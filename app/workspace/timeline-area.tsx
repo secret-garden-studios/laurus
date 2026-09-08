@@ -152,7 +152,7 @@ export default function TimelineArea() {
       case "high":
         return { width: 1000 };
       case "midhigh":
-        return { width: 754 };
+        return { width: 760 };
       case "midlow":
       case "low":
         return { width: 600 };
@@ -1077,7 +1077,7 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTi
             paddingLeft: 0,
           },
           input: {
-            fontSize: 8,
+            fontSize: 9,
           },
           svg: {
             width: 19,

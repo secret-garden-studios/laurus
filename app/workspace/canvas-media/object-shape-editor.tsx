@@ -42,6 +42,7 @@ const SELECTED_FILL = "rgb(66, 133, 244)";
 const GHOST_FILL = "rgba(66, 133, 244, 0.65)";
 const PICK_FILL = "rgba(66, 133, 244, 0.12)";
 const PICK_HOVER_FILL = "rgba(66, 133, 244, 0.34)";
+const PREVIEW_COLOR = "rgb(255, 255, 255)";
 
 function screenPxUnit(bufferWidth: number, cssWidth: number, canvasZoom: number): number {
   const perBufferUnit = cssWidth > 0 ? bufferWidth / cssWidth : 1;
@@ -99,6 +100,83 @@ export function ShapeOutlines({
           strokeWidth={stroke / region.radius}
         />
       ))}
+    </svg>
+  );
+}
+
+export interface ShapePreviewSizes {
+  anchor: {
+    fraction: number;
+    minRadius: number;
+  };
+  outline: {
+    fraction: number;
+    minWidth: number;
+  };
+}
+
+export function ShapePreview({
+  shape,
+  size,
+  sizes,
+  style,
+}: {
+  shape: string;
+  size: number;
+  sizes: ShapePreviewSizes;
+  style?: React.CSSProperties;
+}) {
+  const rings = useMemo(() => editableRings(shape), [shape]);
+  const frame = useMemo(() => {
+    const points = rings.flatMap((ring) => flattenCubicRing(ring).concat(ring.map((anchor) => anchor.point)));
+    if (points.length === 0) return undefined;
+    const xs = points.map((p) => p[0]);
+    const ys = points.map((p) => p[1]);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    const half = Math.max(maxX - minX, maxY - minY) / 2;
+    return half > 0 ? { cx: (minX + maxX) / 2, cy: (minY + maxY) / 2, half } : undefined;
+  }, [rings]);
+
+  if (!frame || size <= 0) return null;
+
+  const anchorRadiusPx = Math.max(sizes.anchor.minRadius, size * sizes.anchor.fraction);
+  const outlineWidthPx = Math.max(sizes.outline.minWidth, size * sizes.outline.fraction);
+  const room = 1 - (2 * anchorRadiusPx) / size;
+  if (room <= 0) return null;
+
+  const half = frame.half / room;
+  const unit = (2 * half) / size;
+
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox={`${frame.cx - half} ${frame.cy - half} ${half * 2} ${half * 2}`}
+      style={{ pointerEvents: "none", ...style }}
+    >
+      {rings.map((ring, ringIndex) => (
+        <path
+          key={`preview-outline-${ringIndex}`}
+          d={cubicRingsToPathData([ring])}
+          fill="none"
+          stroke={PREVIEW_COLOR}
+          strokeWidth={outlineWidthPx * unit}
+        />
+      ))}
+      {rings.map((ring, ringIndex) =>
+        ring.map((anchor, anchorIndex) => (
+          <circle
+            key={`preview-anchor-${ringIndex}-${anchorIndex}`}
+            cx={anchor.point[0]}
+            cy={anchor.point[1]}
+            r={anchorRadiusPx * unit}
+            fill={PREVIEW_COLOR}
+          />
+        )),
+      )}
     </svg>
   );
 }

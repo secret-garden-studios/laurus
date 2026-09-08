@@ -126,8 +126,8 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
             containerHeight: "100%",
             containerWidth: 40,
             trackWidth: 1,
-            capWidth: 12,
-            capHeight: 12,
+            capWidth: 13,
+            capHeight: 13,
             capBorderOffset: 0,
           },
           paramButtonContainer: {

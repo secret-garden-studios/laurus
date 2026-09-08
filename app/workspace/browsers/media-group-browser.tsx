@@ -1,19 +1,9 @@
 import { memo, useContext, useRef, useState, useCallback, useMemo, useEffect } from "react";
 import { dellaRespira } from "../../fonts";
 import { CoreContext, HoverContext, MaskContext } from "../workspace.client";
-import LaurusImage, { pxSizes } from "../../components/laurus-image";
+import LaurusImage from "../../components/laurus-image";
 import styles from "../../app.module.css";
-import {
-  addCircle,
-  antigravity200,
-  arrowDropDown,
-  arrowDropUp,
-  asterisk200,
-  checkCircle,
-  circle,
-  SvgRepo,
-  type LaurusClientSvg,
-} from "../../svg-repo";
+import { addCircle, arrowDropDown, arrowDropUp, checkCircle, circle, SvgRepo } from "../../svg-repo";
 import {
   deleteMediaGroup,
   LaurusImgResult,
@@ -26,7 +16,6 @@ import {
   updateMediaGroup,
 } from "../workspace.server";
 import {
-  isBehindMask,
   MASK_PLANE_ROW,
   maskStack,
   restackFromDrop,
@@ -34,6 +23,11 @@ import {
   type StackRef,
   type StackRow,
 } from "../canvas-media/mask-order";
+import {
+  CIRCLE_SHAPE,
+  ObjectOrLightThumbnail,
+  type ObjectOrLightThumbnailSizes,
+} from "../canvas-media/object-or-light-thumbnail";
 import { frontToBackMedia, restackGroupWithinProject, type StackedMedia } from "./media-stack";
 import { updateProject, LaurusProjectResult } from "../../projects/projects.server";
 import { CoreActionType } from "../states/core-state";
@@ -835,6 +829,7 @@ interface StackedRowElement {
   ref: StackRef;
   name: string;
   description: string;
+  shape: string;
   order: number;
 }
 
@@ -849,6 +844,7 @@ function rowElements(mask: LaurusMaskResult): Map<string, StackedRowElement> {
       ref,
       name: element.name ? element.name : `${ref.kind} ${ref.id}`,
       description: element.description,
+      shape: element.shape || CIRCLE_SHAPE,
       order: element.order,
     });
   };
@@ -869,114 +865,169 @@ function stackRowIds(maskKey: string, rows: readonly StackRow[]): string[] {
   return rows.map((row) => (row === MASK_PLANE_ROW ? planeRowId(maskKey) : elementRowId(maskKey, row)));
 }
 
-function StackElementThumbnail({
-  mask,
-  label,
-  glyph,
-  size,
-  behind,
-  onClick,
-}: {
-  mask: LaurusMaskResult;
-  label: string;
-  glyph: (fill: string) => LaurusClientSvg;
-  size: number;
-  behind: boolean;
-  onClick: () => void;
-}) {
-  const { coreState } = useContext(CoreContext);
-  const browserImgs = useUIBrowserImgs();
-
-  let sourceImgSrc: string | undefined;
-  for (const [key, img] of coreState.project.imgs) {
-    if (img.img_media_id === mask.source_img_media_id) {
-      sourceImgSrc = coreState.canvasImgs.get(key)?.src;
-      break;
-    }
-  }
-  if (!sourceImgSrc) {
-    sourceImgSrc = browserImgs.find((img) => img.img_media_id === mask.source_img_media_id)?.src;
-  }
-
-  return (
-    <div
-      onClick={onClick}
-      style={{
-        position: "relative",
-        width: size,
-        height: size,
-        display: "grid",
-        placeContent: "center",
-        cursor: "pointer",
-        overflow: "hidden",
-        backgroundColor: "rgb(60, 60, 60)",
-      }}
-    >
-      <LaurusImage
-        draggable={false}
-        alt={label}
-        src={sourceImgSrc ?? ""}
-        fill
-        sizes={pxSizes(size, 200)}
-        style={{ objectFit: "cover" }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          backgroundColor: "rgba(0, 0, 0, 0.55)",
-          backdropFilter: "blur(2px)",
-        }}
-      />
-      <SvgRepo
-        svg={glyph(behind ? "rgba(255, 255, 255, 0.45)" : "rgb(255, 255, 255)")}
-        scale={1}
-        scaleToContaier
-        containerStyle={{
-          position: "relative",
-          width: Math.round(size * 0.5),
-          height: Math.round(size * 0.5),
-          filter: behind ? "none" : "drop-shadow(0px 0px 6px rgba(255, 255, 255, 0.9))",
-        }}
-      />
-    </div>
-  );
-}
-
 interface MaskElementRow {
   maskKey: string;
   mask: LaurusMaskResult;
   element: StackedRowElement;
   label: string;
   isEven: boolean;
-  indexColumnStyle: { width: string; fontSize: number };
-  rowHeight: number;
-  filenameStyle: { fontSize: number; letterSpacing: number };
-  filenameMargin: number;
-  removeOverlaySize: number;
   onContextMenuClick: () => void;
   restacking: boolean;
 }
-function MaskElementRow({
-  maskKey,
-  mask,
-  element,
-  label,
-  isEven,
-  indexColumnStyle,
-  rowHeight,
-  filenameStyle,
-  filenameMargin,
-  removeOverlaySize,
-  onContextMenuClick,
-  restacking,
-}: MaskElementRow) {
+function MaskElementRow({ maskKey, mask, element, label, isEven, onContextMenuClick, restacking }: MaskElementRow) {
+  const resolution = useUIResolution();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: elementRowId(maskKey, element.ref),
     disabled: restacking,
   });
   const [isRowHovered, setIsRowHovered] = useState(false);
-  const behind = isBehindMask(element);
+  const [dynamicSizes] = useState<{
+    row: { borderWidth: number };
+    indexColumn: { width: string; fontSize: number };
+    content: { height: number; paddingLeft: number; gutter: number };
+    thumbnail: ObjectOrLightThumbnailSizes;
+    filename: { fontSize: number; letterSpacing: number };
+    removeOverlay: { padding: number; size: number };
+  }>(() => {
+    switch (resolution.type) {
+      case "high":
+        return {
+          row: {
+            borderWidth: 1,
+          },
+          indexColumn: {
+            width: "4ch",
+            fontSize: 9,
+          },
+          content: {
+            height: 70,
+            paddingLeft: 5,
+            gutter: 24,
+          },
+          thumbnail: {
+            display: {
+              width: 60,
+              height: 60,
+              borderRadius: 0,
+            },
+            scrim: {
+              blur: 6,
+            },
+            shape: {
+              size: 40,
+              glow: 0,
+              anchor: {
+                fraction: 0,
+                minRadius: 0,
+              },
+              outline: {
+                fraction: 0,
+                minWidth: 1.33,
+              },
+            },
+          },
+          filename: {
+            fontSize: 11,
+            letterSpacing: 1,
+          },
+          removeOverlay: {
+            padding: 4,
+            size: 20,
+          },
+        };
+      case "midhigh":
+        return {
+          row: {
+            borderWidth: 1,
+          },
+          indexColumn: {
+            width: "4ch",
+            fontSize: 7,
+          },
+          content: {
+            height: 56,
+            paddingLeft: 5,
+            gutter: 24,
+          },
+          thumbnail: {
+            display: {
+              width: 46,
+              height: 46,
+              borderRadius: 0,
+            },
+            scrim: {
+              blur: 4,
+            },
+            shape: {
+              size: 30,
+              glow: 0,
+              anchor: {
+                fraction: 0,
+                minRadius: 0,
+              },
+              outline: {
+                fraction: 0,
+                minWidth: 0.85,
+              },
+            },
+          },
+          filename: {
+            fontSize: 10,
+            letterSpacing: 2,
+          },
+          removeOverlay: {
+            padding: 4,
+            size: 18,
+          },
+        };
+      case "midlow":
+      case "low":
+        return {
+          row: {
+            borderWidth: 1,
+          },
+          indexColumn: {
+            width: "4ch",
+            fontSize: 7,
+          },
+          content: {
+            height: 48,
+            paddingLeft: 5,
+            gutter: 24,
+          },
+          thumbnail: {
+            display: {
+              width: 38,
+              height: 38,
+              borderRadius: 0,
+            },
+            scrim: {
+              blur: 6,
+            },
+            shape: {
+              size: 25,
+              glow: 0,
+              anchor: {
+                fraction: 0,
+                minRadius: 0,
+              },
+              outline: {
+                fraction: 0,
+                minWidth: 0.75,
+              },
+            },
+          },
+          filename: {
+            fontSize: 10,
+            letterSpacing: 2,
+          },
+          removeOverlay: {
+            padding: 4,
+            size: 16,
+          },
+        };
+    }
+  });
 
   return (
     <div
@@ -985,7 +1036,7 @@ function MaskElementRow({
         width: "100%",
         display: "flex",
         background: `rgba(255, 255, 255, ${(isEven ? 0 : 0.025) + (isRowHovered ? 0.02 : 0)})`,
-        border: `1px solid ${isRowHovered ? "rgba(255, 255, 255, 0.4)" : "rgba(0, 0, 0, 0)"}`,
+        border: `${dynamicSizes.row.borderWidth}px solid ${isRowHovered ? "rgba(255, 255, 255, 0.4)" : "rgba(0, 0, 0, 0)"}`,
         transform: CSS.Transform.toString(transform),
         transition,
         opacity: isDragging ? 0.5 : 1,
@@ -1004,8 +1055,8 @@ function MaskElementRow({
           placeContent: "center",
           cursor: restacking ? "progress" : "grab",
           touchAction: "none",
-          width: indexColumnStyle.width,
-          fontSize: indexColumnStyle.fontSize,
+          width: dynamicSizes.indexColumn.width,
+          fontSize: dynamicSizes.indexColumn.fontSize,
         }}
       >
         {label}
@@ -1013,24 +1064,23 @@ function MaskElementRow({
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: `min-content ${filenameMargin}px auto ${filenameMargin}px min-content`,
+          gridTemplateColumns: `min-content ${dynamicSizes.content.gutter}px auto ${dynamicSizes.content.gutter}px min-content`,
           gridTemplateRows: "1fr",
           alignItems: "center",
-          height: rowHeight,
-          paddingLeft: 5,
+          height: dynamicSizes.content.height,
+          paddingLeft: dynamicSizes.content.paddingLeft,
           width: "100%",
         }}
       >
         <div
           className={styles["transparent-checkerboard-background"]}
-          style={{ width: rowHeight - 10, height: rowHeight - 10 }}
+          style={{ width: dynamicSizes.thumbnail.display.width, height: dynamicSizes.thumbnail.display.height }}
         >
-          <StackElementThumbnail
-            mask={mask}
-            label={element.name}
-            glyph={element.ref.kind === "object" ? antigravity200 : asterisk200}
-            size={rowHeight - 10}
-            behind={behind}
+          <ObjectOrLightThumbnail
+            title={element.name}
+            shape={element.shape}
+            sourceImgMediaId={mask.source_img_media_id}
+            sizes={dynamicSizes.thumbnail}
             onClick={onContextMenuClick}
           />
         </div>
@@ -1040,20 +1090,20 @@ function MaskElementRow({
             style={{
               textAlign: "center",
               whiteSpace: "nowrap",
-              color: behind ? "rgba(220, 220, 220, 0.5)" : "rgb(220, 220, 220)",
-              ...filenameStyle,
+              color: "rgb(220, 220, 220)",
+              ...dynamicSizes.filename,
             }}
           >
             {element.description ? element.description : element.name}
           </div>
         </div>
         <div />
-        <div style={{ padding: 4, height: "100%", width: "min-content" }}>
+        <div style={{ padding: dynamicSizes.removeOverlay.padding, height: "100%", width: "min-content" }}>
           <SvgRepo
             svg={circle("rgba(0,0,0,0)")}
             scale={0.9}
             scaleToContaier={true}
-            containerStyle={{ width: removeOverlaySize, height: removeOverlaySize }}
+            containerStyle={{ width: dynamicSizes.removeOverlay.size, height: dynamicSizes.removeOverlay.size }}
           />
         </div>
       </div>
@@ -1572,11 +1622,6 @@ function MediaGroupRow({
                 element={element}
                 label={`${index + 1}.${(i < planeRowIndex ? i : i - 1) + 1}`}
                 isEven={i % 2 === 0}
-                indexColumnStyle={indexColumnStyle}
-                rowHeight={dynamicSizes.groupItem.height}
-                filenameStyle={dynamicSizes.filename.filename}
-                filenameMargin={dynamicSizes.filename.margin}
-                removeOverlaySize={removeOverlaySize}
                 onContextMenuClick={() => onElementContextMenuClick(element.ref)}
                 restacking={restacking}
               />
