@@ -3,138 +3,11 @@ import { SvgRepo, chevronLeft200, chevronRight200 } from "../../svg-repo";
 import { CoreContext, HoverContext, MaskContext, UIContext } from "../workspace.client";
 import LaurusImage, { pxSizes } from "../../components/laurus-image";
 import styles from "@/app/app.module.css";
-import { CarouselEntry, LaurusActiveElement, UIActionType, UIState, isMaskEditSubject } from "../states/ui-state";
+import { CarouselEntry, LaurusActiveElement, UIActionType, isMaskEditSubject } from "../states/ui-state";
 import { useSelectionGuard } from "../hooks/useMaskEditExit";
 import { maskGeometry } from "../canvas-media/mask-geometry";
-import { ShapePreview } from "../canvas-media/object-shape-editor";
-import { unitCirclePath } from "../canvas-media/object-path";
+import { CIRCLE_SHAPE, ObjectOrLightThumbnail, resolveSourceImgSrc } from "../canvas-media/object-or-light-thumbnail";
 import { LaurusMaskResult } from "../workspace.server";
-import { CoreState } from "../states/core-state";
-
-const CIRCLE_SHAPE = unitCirclePath();
-
-function resolveSourceImgSrc(coreState: CoreState, browserImgs: UIState["browserImgs"], sourceImgMediaId: string) {
-  for (const [key, img] of coreState.project.imgs) {
-    if (img.img_media_id === sourceImgMediaId) {
-      return coreState.canvasImgs.get(key)?.src;
-    }
-  }
-  return browserImgs.find((img) => img.img_media_id === sourceImgMediaId)?.src;
-}
-
-function ObjectOrLightThumbnail({
-  title,
-  shape,
-  sourceImgMediaId,
-  onClick,
-}: {
-  title: string;
-  shape: string;
-  sourceImgMediaId: string;
-  onClick: () => void;
-}) {
-  const { isAltKeyPressed } = useContext(HoverContext);
-  const { coreState } = useContext(CoreContext);
-  const { uiState } = useContext(UIContext);
-  const [dynamicSizes] = useState(() => {
-    switch (uiState.resolution.type) {
-      case "high":
-        return {
-          display: {
-            width: 280,
-            height: 280,
-            borderRadius: 10,
-          },
-          scrim: {
-            blur: 9,
-          },
-          shape: {
-            size: 186,
-            glow: 6,
-          },
-        };
-      case "midhigh":
-        return {
-          display: {
-            width: 200,
-            height: 200,
-            borderRadius: 10,
-          },
-          scrim: {
-            blur: 9,
-          },
-          shape: {
-            size: 140,
-            glow: 4,
-          },
-        };
-      case "midlow":
-      case "low":
-        return {
-          display: {
-            width: Math.round(280 * uiState.resolution.factor),
-            height: Math.round(280 * uiState.resolution.factor),
-            borderRadius: 10,
-          },
-          scrim: {
-            blur: 9,
-          },
-          shape: {
-            size: Math.round(174 * uiState.resolution.factor),
-            glow: 4,
-          },
-        };
-    }
-  });
-  const sourceImgSrc = resolveSourceImgSrc(coreState, uiState.browserImgs, sourceImgMediaId);
-  return (
-    <div
-      title={title}
-      onClick={onClick}
-      style={{
-        ...dynamicSizes.display,
-        position: "relative",
-        display: "grid",
-        placeContent: "center",
-        cursor: isAltKeyPressed ? "crosshair" : "pointer",
-        backgroundColor: "rgb(50, 50, 50)",
-        filter: `drop-shadow(0px 0px ${dynamicSizes.shape.glow}px rgba(0, 0, 0, 0.75))`,
-      }}
-    >
-      <LaurusImage
-        draggable={false}
-        alt={sourceImgSrc ?? ""}
-        src={sourceImgSrc ?? ""}
-        fill
-        sizes={pxSizes(dynamicSizes.display.width, 200)}
-        style={{
-          objectFit: "cover",
-          borderRadius: dynamicSizes.display.borderRadius,
-        }}
-      />
-
-      <div
-        style={{
-          position: "absolute",
-          width: "100%",
-          height: "100%",
-          backgroundColor: "rgba(0, 0, 0, 0.05)",
-          backdropFilter: `blur(${dynamicSizes.scrim.blur}px)`,
-          borderRadius: dynamicSizes.display.borderRadius,
-        }}
-      />
-      <ShapePreview
-        shape={shape}
-        size={dynamicSizes.shape.size}
-        style={{
-          position: "relative",
-          overflow: "visible",
-          filter: `drop-shadow(0px 0px ${dynamicSizes.shape.glow}px rgba(0, 0, 0, 0.9))`,
-        }}
-      />
-    </div>
-  );
-}
 
 function MaskThumbnail({
   mediaKey,
@@ -256,6 +129,28 @@ export default function UnitDisplay({
             height: 280,
             borderRadius: 10,
           },
+          thumbnail: {
+            display: {
+              width: 280,
+              height: 280,
+              borderRadius: 10,
+            },
+            scrim: {
+              blur: 9,
+            },
+            shape: {
+              size: 186,
+              glow: 6,
+              anchor: {
+                fraction: 0.011,
+                minRadius: 2.75,
+              },
+              outline: {
+                fraction: 0.008,
+                minWidth: 1.5,
+              },
+            },
+          },
           glow: 6,
           displaySvg: {
             width: 200,
@@ -284,6 +179,28 @@ export default function UnitDisplay({
             width: 200,
             height: 200,
             borderRadius: 10,
+          },
+          thumbnail: {
+            display: {
+              width: 200,
+              height: 200,
+              borderRadius: 10,
+            },
+            scrim: {
+              blur: 9,
+            },
+            shape: {
+              size: 140,
+              glow: 4,
+              anchor: {
+                fraction: 0.011,
+                minRadius: 2.15,
+              },
+              outline: {
+                fraction: 0.008,
+                minWidth: 1,
+              },
+            },
           },
           glow: 4,
           displaySvg: {
@@ -314,6 +231,28 @@ export default function UnitDisplay({
             width: Math.round(280 * uiState.resolution.factor),
             height: Math.round(280 * uiState.resolution.factor),
             borderRadius: 10,
+          },
+          thumbnail: {
+            display: {
+              width: Math.round(280 * uiState.resolution.factor),
+              height: Math.round(280 * uiState.resolution.factor),
+              borderRadius: 10,
+            },
+            scrim: {
+              blur: 9,
+            },
+            shape: {
+              size: Math.round(174 * uiState.resolution.factor),
+              glow: 4,
+              anchor: {
+                fraction: 0.011,
+                minRadius: 1.5,
+              },
+              outline: {
+                fraction: 0.008,
+                minWidth: 0.5,
+              },
+            },
           },
           glow: 4,
           displaySvg: {
@@ -643,6 +582,7 @@ export default function UnitDisplay({
                         title="mesh light"
                         shape={editedShapePath(c) ?? (light?.shape || CIRCLE_SHAPE)}
                         sourceImgMediaId={maskData.source_img_media_id}
+                        sizes={dynamicSizes.thumbnail}
                         onClick={() => {
                           if (isAltKeyPressed) return;
                           if (!guardSelection(c)) return;
@@ -664,6 +604,7 @@ export default function UnitDisplay({
                         title="mesh object"
                         shape={editedShapePath(c) ?? (object.shape || CIRCLE_SHAPE)}
                         sourceImgMediaId={maskData.source_img_media_id}
+                        sizes={dynamicSizes.thumbnail}
                         onClick={() => {
                           if (isAltKeyPressed) return;
                           if (!guardSelection(c)) return;

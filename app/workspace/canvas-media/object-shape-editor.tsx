@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   EDITABLE_MAX_ANCHORS,
   cubicRingsToPathData,
@@ -18,7 +18,6 @@ import {
   type RingPlace,
 } from "./object-path.ts";
 import { polygonArea } from "./object-shape.ts";
-import { UIContext } from "../workspace.client";
 import { Z_INDEX } from "../workspace.config";
 
 const ANCHOR_RADIUS_PX = 4.5;
@@ -105,46 +104,28 @@ export function ShapeOutlines({
   );
 }
 
-export function ShapePreview({ shape, size, style }: { shape: string; size: number; style?: React.CSSProperties }) {
-  const { uiState } = useContext(UIContext);
-  const [dynamicSizes] = useState(() => {
-    switch (uiState.resolution.type) {
-      case "high":
-        return {
-          anchor: {
-            fraction: 0.011,
-            minRadius: 2.75,
-          },
-          outline: {
-            fraction: 0.008,
-            minWidth: 1.5,
-          },
-        };
-      case "midhigh":
-        return {
-          anchor: {
-            fraction: 0.011,
-            minRadius: 2.15,
-          },
-          outline: {
-            fraction: 0.008,
-            minWidth: 1,
-          },
-        };
-      case "midlow":
-      case "low":
-        return {
-          anchor: {
-            fraction: 0.011,
-            minRadius: 1.5,
-          },
-          outline: {
-            fraction: 0.008,
-            minWidth: 0.5,
-          },
-        };
-    }
-  });
+export interface ShapePreviewSizes {
+  anchor: {
+    fraction: number;
+    minRadius: number;
+  };
+  outline: {
+    fraction: number;
+    minWidth: number;
+  };
+}
+
+export function ShapePreview({
+  shape,
+  size,
+  sizes,
+  style,
+}: {
+  shape: string;
+  size: number;
+  sizes: ShapePreviewSizes;
+  style?: React.CSSProperties;
+}) {
   const rings = useMemo(() => editableRings(shape), [shape]);
   const frame = useMemo(() => {
     const points = rings.flatMap((ring) => flattenCubicRing(ring).concat(ring.map((anchor) => anchor.point)));
@@ -161,8 +142,8 @@ export function ShapePreview({ shape, size, style }: { shape: string; size: numb
 
   if (!frame || size <= 0) return null;
 
-  const anchorRadiusPx = Math.max(dynamicSizes.anchor.minRadius, size * dynamicSizes.anchor.fraction);
-  const outlineWidthPx = Math.max(dynamicSizes.outline.minWidth, size * dynamicSizes.outline.fraction);
+  const anchorRadiusPx = Math.max(sizes.anchor.minRadius, size * sizes.anchor.fraction);
+  const outlineWidthPx = Math.max(sizes.outline.minWidth, size * sizes.outline.fraction);
   const room = 1 - (2 * anchorRadiusPx) / size;
   if (room <= 0) return null;
 

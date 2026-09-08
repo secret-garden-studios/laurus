@@ -1077,7 +1077,7 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTi
             paddingLeft: 0,
           },
           input: {
-            fontSize: 8,
+            fontSize: 9,
           },
           svg: {
             width: 19,
