@@ -1051,6 +1051,13 @@ export function ProjectMaskItem({
         return Promise.resolve(undefined);
       }
       const playAll = effectKey === undefined && lightId === undefined && objectId === undefined;
+      const wiredStart = (inputId: string, kind?: LaurusEffect["type"]) =>
+        Math.min(
+          Infinity,
+          ...coreState.effects
+            .filter((effect) => (kind === undefined || effect.type === kind) && effect.value.math.has(inputId))
+            .map((effect) => effect.value.start),
+        );
       const candidateLightIds = playAll
         ? Array.from(lightsRef.current.keys())
         : objectId !== undefined
@@ -1088,7 +1095,12 @@ export function ProjectMaskItem({
           return { lightId: id, inputId, wiredMove, wiredLightSource, wiredScale, wiredSkew };
         })
         .filter((t) => t.wiredMove || t.wiredLightSource || t.wiredScale || t.wiredSkew)
-        .map((t) => ({ ...t, restPosition: computeLightSourceRestPosition(t.lightId) }));
+        .map((t) => ({
+          ...t,
+          restPosition: computeLightSourceRestPosition(t.lightId),
+          animatesFrom: wiredStart(t.inputId),
+          lightSourceFrom: wiredStart(t.inputId, "light_source"),
+        }));
 
       const candidateObjectIds = playAll
         ? objectsRef.current.map((object) => object.id)
@@ -1130,7 +1142,12 @@ export function ProjectMaskItem({
           );
           return { objectId: id, inputId, wiredMove, wiredLightSource, wiredScale, wiredRotate, wiredSkew };
         })
-        .filter((t) => t.wiredMove || t.wiredLightSource || t.wiredScale || t.wiredRotate || t.wiredSkew);
+        .filter((t) => t.wiredMove || t.wiredLightSource || t.wiredScale || t.wiredRotate || t.wiredSkew)
+        .map((t) => ({
+          ...t,
+          animatesFrom: wiredStart(t.inputId),
+          lightSourceFrom: wiredStart(t.inputId, "light_source"),
+        }));
 
       if (targets.length === 0 && objectTargets.length === 0) {
         stopLightSourceAnimation();
@@ -1152,7 +1169,10 @@ export function ProjectMaskItem({
       const skewFramesByLight = new Map<number, LaurusFrame[]>();
       const session: { rafId: number | undefined; resolve: () => void } = { rafId: undefined, resolve: () => {} };
       activePlaybackRef.current = session;
-      playingObjectIdsRef.current = new Set(objectTargets.map((t) => t.objectId));
+      const projectFps = coreState.project.fps > 0 ? coreState.project.fps : 30;
+      playingObjectIdsRef.current = new Set(
+        objectTargets.filter((t) => !playAll || Math.round(t.animatesFrom * projectFps) <= 0).map((t) => t.objectId),
+      );
       const drivenLightIds = new Set(targets.map((t) => t.lightId));
       playbackLightSourcesRef.current.forEach((_, lightId) => {
         if (!drivenLightIds.has(lightId)) playbackLightSourcesRef.current.delete(lightId);
@@ -1163,7 +1183,6 @@ export function ProjectMaskItem({
       render();
       recolorHighlight();
 
-      const projectFps = coreState.project.fps > 0 ? coreState.project.fps : 30;
       let fps: number;
       let totalFrames: number;
       let durationSeconds: number;
@@ -1335,8 +1354,13 @@ export function ProjectMaskItem({
         const canvas = canvasRef.current;
         if (!canvas) return;
         const { x: scaleX, y: scaleY } = bufferScaleRef.current;
+        const restingBefore = (from: number) => playAll && frameIndex < Math.round(from * fps);
 
         targets.forEach((t) => {
+          if (restingBefore(t.animatesFrom)) {
+            playbackLightSourcesRef.current.delete(t.lightId);
+            return;
+          }
           const mergedFrames = mergedFramesByLight.get(t.lightId);
           const moveFrames = moveFramesByLight.get(t.lightId);
           const lightSourceFrames = lightSourceFramesByLight.get(t.lightId);
@@ -1348,13 +1372,15 @@ export function ProjectMaskItem({
             : moveFrames && moveFrames.length > 0
               ? moveFrames[Math.min(frameIndex, moveFrames.length - 1)]
               : undefined;
-          const lightPoint = playAll
-            ? t.wiredLightSource
-              ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
-              : undefined
-            : lightSourceFrames && lightSourceFrames.length > 0
-              ? lightSourceFrames[Math.min(frameIndex, lightSourceFrames.length - 1)]
-              : undefined;
+          const lightPoint = restingBefore(t.lightSourceFrom)
+            ? undefined
+            : playAll
+              ? t.wiredLightSource
+                ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
+                : undefined
+              : lightSourceFrames && lightSourceFrames.length > 0
+                ? lightSourceFrames[Math.min(frameIndex, lightSourceFrames.length - 1)]
+                : undefined;
           const scalePoint = playAll
             ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
             : scaleFrames && scaleFrames.length > 0
@@ -1397,6 +1423,12 @@ export function ProjectMaskItem({
         objectTargets.forEach((t) => {
           const object = objectsRef.current.find((p) => p.id === t.objectId);
           if (!object) return;
+          if (restingBefore(t.animatesFrom)) {
+            playbackObjectsRef.current.delete(t.objectId);
+            playingObjectIdsRef.current.delete(t.objectId);
+            return;
+          }
+          playingObjectIdsRef.current.add(t.objectId);
           const mergedFrames = mergedFramesByObject.get(t.objectId);
           const moveFrames = moveFramesByObject.get(t.objectId);
           const lightSourceFrames = lightSourceFramesByObject.get(t.objectId);
@@ -1409,13 +1441,15 @@ export function ProjectMaskItem({
             : moveFrames && moveFrames.length > 0
               ? moveFrames[Math.min(frameIndex, moveFrames.length - 1)]
               : undefined;
-          const lightSourcePoint = playAll
-            ? t.wiredLightSource
-              ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
-              : undefined
-            : lightSourceFrames && lightSourceFrames.length > 0
-              ? lightSourceFrames[Math.min(frameIndex, lightSourceFrames.length - 1)]
-              : undefined;
+          const lightSourcePoint = restingBefore(t.lightSourceFrom)
+            ? undefined
+            : playAll
+              ? t.wiredLightSource
+                ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
+                : undefined
+              : lightSourceFrames && lightSourceFrames.length > 0
+                ? lightSourceFrames[Math.min(frameIndex, lightSourceFrames.length - 1)]
+                : undefined;
           const scalePoint = playAll
             ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
             : scaleFrames && scaleFrames.length > 0
