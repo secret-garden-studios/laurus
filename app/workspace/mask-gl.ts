@@ -3,14 +3,12 @@ import { isBehindMask, MASK_ORDER_EPSILON, occludes } from "./canvas-media/mask-
 import { toCssSkewAngle } from "./skew-angle.ts";
 import { OBJECT_SDF_TILE, objectShapeProfileU, type ObjectShape } from "./canvas-media/object-shape.ts";
 import {
-  LIGHT_SDF_ATLAS,
   LIGHT_SDF_GRID,
   MASK_OBJECT_SWELL,
   MASK_OBJECT_SWELL_LIMIT,
   MAX_MASK_LIGHT_SOURCES,
   MAX_MASK_OBJECTS,
   MIN_MASK_OBJECT_FALLOFF,
-  OBJECT_SDF_ATLAS,
   OBJECT_SDF_GRID,
   OBJECT_SDF_RANGE,
   OBJECT_SUBDIVISION_TOLERANCE_PX,
@@ -84,9 +82,10 @@ export interface GLState {
   objectShapeRowsLoc: WebGLUniformLocation;
   objectShapeMaxDepthLoc: WebGLUniformLocation;
   objectFillsLoc: WebGLUniformLocation;
+  objectGridlinesLoc: WebGLUniformLocation;
   objectLiftsLoc: WebGLUniformLocation;
   objectShapeTexture: WebGLTexture;
-  objectShapeSignature: string;
+  objectShapeSlots: string[];
   lightShapesLoc: WebGLUniformLocation;
   lightShapeRowsLoc: WebGLUniformLocation;
   lightShapeMaxDepthLoc: WebGLUniformLocation;
@@ -94,7 +93,7 @@ export interface GLState {
   lightGridlinesLoc: WebGLUniformLocation;
   lightLowpolyLoc: WebGLUniformLocation;
   lightShapeTexture: WebGLTexture;
-  lightShapeSignature: string;
+  lightShapeSlots: string[];
   supportsVertexTextures: boolean;
   textureMixLoc: WebGLUniformLocation;
   textureLoc: WebGLUniformLocation;
@@ -105,35 +104,93 @@ export interface GLState {
   backingGreyLoc: WebGLUniformLocation;
 }
 
-export function encodeObjectSdfAtlas(shapes: (ObjectShape | undefined)[], grid = OBJECT_SDF_GRID): Uint8Array {
+export function encodeObjectSdfTile(shape: ObjectShape): Uint8Array {
+  const data = new Uint8Array(OBJECT_SDF_TILE * OBJECT_SDF_TILE * 4);
+  for (let row = 0; row < OBJECT_SDF_TILE; row++) {
+    for (let col = 0; col < OBJECT_SDF_TILE; col++) {
+      const sourceRow = Math.min(shape.tile - 1, Math.floor((row * shape.tile) / OBJECT_SDF_TILE));
+      const sourceCol = Math.min(shape.tile - 1, Math.floor((col * shape.tile) / OBJECT_SDF_TILE));
+      const source = sourceRow * shape.tile + sourceCol;
+
+      const biased = Math.min(Math.max(shape.sdf[source] / (2 * OBJECT_SDF_RANGE) + 0.5, 0), 1) * 255;
+      const offset = (row * OBJECT_SDF_TILE + col) * 4;
+      data[offset] = Math.floor(biased);
+      data[offset + 1] = Math.round((biased - Math.floor(biased)) * 255);
+      data[offset + 2] = Math.round(((shape.grad[source * 2] / 127) * 0.5 + 0.5) * 255);
+      data[offset + 3] = Math.round(((shape.grad[source * 2 + 1] / 127) * 0.5 + 0.5) * 255);
+    }
+  }
+  return data;
+}
+
+export function encodeObjectSdfAtlas(shapes: readonly (ObjectShape | undefined)[], grid = OBJECT_SDF_GRID): Uint8Array {
   const atlas = grid * OBJECT_SDF_TILE;
   const data = new Uint8Array(atlas * atlas * 4);
+  const stride = OBJECT_SDF_TILE * 4;
   shapes.forEach((shape, slot) => {
     if (!shape || slot >= grid * grid) return;
-    const tileCol = slot % grid;
-    const tileRow = Math.floor(slot / grid);
+    const tile = encodeObjectSdfTile(shape);
+    const [left, top] = objectSdfTileOrigin(slot, grid);
     for (let row = 0; row < OBJECT_SDF_TILE; row++) {
-      for (let col = 0; col < OBJECT_SDF_TILE; col++) {
-        const sourceRow = Math.min(shape.tile - 1, Math.floor((row * shape.tile) / OBJECT_SDF_TILE));
-        const sourceCol = Math.min(shape.tile - 1, Math.floor((col * shape.tile) / OBJECT_SDF_TILE));
-        const source = sourceRow * shape.tile + sourceCol;
-
-        const biased = Math.min(Math.max(shape.sdf[source] / (2 * OBJECT_SDF_RANGE) + 0.5, 0), 1) * 255;
-        const x = tileCol * OBJECT_SDF_TILE + col;
-        const y = tileRow * OBJECT_SDF_TILE + row;
-        const offset = (y * atlas + x) * 4;
-        data[offset] = Math.floor(biased);
-        data[offset + 1] = Math.round((biased - Math.floor(biased)) * 255);
-        data[offset + 2] = Math.round(((shape.grad[source * 2] / 127) * 0.5 + 0.5) * 255);
-        data[offset + 3] = Math.round(((shape.grad[source * 2 + 1] / 127) * 0.5 + 0.5) * 255);
-      }
+      data.set(tile.subarray(row * stride, (row + 1) * stride), ((top + row) * atlas + left) * 4);
     }
   });
   return data;
 }
 
-export function objectShapeAtlasSignature(shapes: readonly (ObjectShape | undefined)[]): string {
-  return shapes.map((shape) => (shape ? `${shape.tile}:${shape.path}` : "")).join("|");
+export function objectSdfTileOrigin(slot: number, grid: number): [number, number] {
+  return [(slot % grid) * OBJECT_SDF_TILE, Math.floor(slot / grid) * OBJECT_SDF_TILE];
+}
+
+export function objectShapeSlotSignature(shape: ObjectShape | undefined): string {
+  return shape ? `${shape.tile}:${shape.path}` : "";
+}
+
+function syncShapeAtlas(
+  gl: WebGLRenderingContext,
+  shapes: readonly (ObjectShape | undefined)[],
+  grid: number,
+  uploaded: string[],
+): void {
+  const slots = grid * grid;
+  const signatures: string[] = [];
+  for (let slot = 0; slot < slots; slot++) signatures.push(objectShapeSlotSignature(shapes[slot]));
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  if (uploaded.length !== slots) {
+    const atlas = grid * OBJECT_SDF_TILE;
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA,
+      atlas,
+      atlas,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      encodeObjectSdfAtlas(shapes, grid),
+    );
+    uploaded.length = 0;
+    uploaded.push(...signatures);
+    return;
+  }
+  for (let slot = 0; slot < slots; slot++) {
+    if (signatures[slot] === uploaded[slot]) continue;
+    uploaded[slot] = signatures[slot];
+    const shape = shapes[slot];
+    if (!shape) continue;
+    const [left, top] = objectSdfTileOrigin(slot, grid);
+    gl.texSubImage2D(
+      gl.TEXTURE_2D,
+      0,
+      left,
+      top,
+      OBJECT_SDF_TILE,
+      OBJECT_SDF_TILE,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      encodeObjectSdfTile(shape),
+    );
+  }
 }
 
 export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
@@ -203,6 +260,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   const lightGridlinesLoc = gl.getUniformLocation(program, "u_lightGridlines");
   const lightLowpolyLoc = gl.getUniformLocation(program, "u_lightLowpoly");
   const objectFillsLoc = gl.getUniformLocation(program, "u_objectFills");
+  const objectGridlinesLoc = gl.getUniformLocation(program, "u_objectGridlines");
   const objectLiftsLoc = gl.getUniformLocation(program, "u_objectLifts");
   const textureMixLoc = gl.getUniformLocation(program, "u_textureMix");
   const textureLoc = gl.getUniformLocation(program, "u_texture");
@@ -243,6 +301,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     !lightGridlinesLoc ||
     !lightLowpolyLoc ||
     !objectFillsLoc ||
+    !objectGridlinesLoc ||
     !objectLiftsLoc ||
     !textureMixLoc ||
     !textureLoc ||
@@ -289,9 +348,10 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     objectShapeRowsLoc,
     objectShapeMaxDepthLoc,
     objectFillsLoc,
+    objectGridlinesLoc,
     objectLiftsLoc,
     objectShapeTexture,
-    objectShapeSignature: "",
+    objectShapeSlots: [],
     lightShapesLoc,
     lightShapeRowsLoc,
     lightShapeMaxDepthLoc,
@@ -299,7 +359,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     lightGridlinesLoc,
     lightLowpolyLoc,
     lightShapeTexture,
-    lightShapeSignature: "",
+    lightShapeSlots: [],
     supportsVertexTextures: gl.getParameter(gl.MAX_VERTEX_TEXTURE_IMAGE_UNITS) > 0,
     textureMixLoc,
     textureLoc,
@@ -403,24 +463,9 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
       lightShapeRows[i] = i;
       lightShapeMaxDepth[i] = shape.maxDepth;
     });
-    const signature = objectShapeAtlasSignature(lightShapes);
     gl.activeTexture(gl.TEXTURE3);
     gl.bindTexture(gl.TEXTURE_2D, state.lightShapeTexture);
-    if (signature !== state.lightShapeSignature) {
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-      gl.texImage2D(
-        gl.TEXTURE_2D,
-        0,
-        gl.RGBA,
-        LIGHT_SDF_ATLAS,
-        LIGHT_SDF_ATLAS,
-        0,
-        gl.RGBA,
-        gl.UNSIGNED_BYTE,
-        encodeObjectSdfAtlas(lightShapes, LIGHT_SDF_GRID),
-      );
-      state.lightShapeSignature = signature;
-    }
+    syncShapeAtlas(gl, lightShapes, LIGHT_SDF_GRID, state.lightShapeSlots);
     gl.uniform1i(state.lightShapesLoc, 3);
   }
   gl.uniform1fv(state.lightShapeRowsLoc, lightShapeRows);
@@ -435,6 +480,7 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
     const fills = new Float32Array(activeObjects.length * 4);
     const lifts = new Float32Array(activeObjects.length * 4);
     const rotations = new Float32Array(activeObjects.length * 4);
+    const objectGridlines = new Float32Array(activeObjects.length);
     activeObjects.forEach((object, i) => {
       objects[i * 4] = object.cx;
       objects[i * 4 + 1] = object.cy;
@@ -450,6 +496,7 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
       lifts[i * 4 + 1] = object.lift?.cy ?? object.cy;
       lifts[i * 4 + 2] = Math.max(object.lift?.radius ?? object.radius, 1);
       lifts[i * 4 + 3] = object.lift ? 1 : 0;
+      objectGridlines[i] = object.gridlines ?? 0;
       const rotation = object.rotation?.inverse ?? OBJECT_ROTATION_NONE.inverse;
       rotations[i * 4] = rotation[0];
       rotations[i * 4 + 1] = rotation[1];
@@ -462,6 +509,7 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
     gl.uniform1fv(state.objectOrdersLoc, orders);
     gl.uniform4fv(state.objectFillsLoc, fills);
     gl.uniform4fv(state.objectLiftsLoc, lifts);
+    gl.uniform1fv(state.objectGridlinesLoc, objectGridlines);
   }
 
   const shapeRows = new Float32Array(MAX_MASK_OBJECTS).fill(-1);
@@ -474,24 +522,9 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
       shapeRows[i] = i;
       shapeMaxDepth[i] = shape.maxDepth;
     });
-    const signature = objectShapeAtlasSignature(usableShapes);
     gl.activeTexture(gl.TEXTURE2);
     gl.bindTexture(gl.TEXTURE_2D, state.objectShapeTexture);
-    if (signature !== state.objectShapeSignature) {
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-      gl.texImage2D(
-        gl.TEXTURE_2D,
-        0,
-        gl.RGBA,
-        OBJECT_SDF_ATLAS,
-        OBJECT_SDF_ATLAS,
-        0,
-        gl.RGBA,
-        gl.UNSIGNED_BYTE,
-        encodeObjectSdfAtlas(usableShapes),
-      );
-      state.objectShapeSignature = signature;
-    }
+    syncShapeAtlas(gl, usableShapes, OBJECT_SDF_GRID, state.objectShapeSlots);
     gl.uniform1i(state.objectShapesLoc, 2);
   }
   gl.uniform1fv(state.objectShapeRowsLoc, shapeRows);
@@ -766,6 +799,7 @@ export interface ObjectGeometryInput {
   fill?: ObjectFill_V1_0;
   lift?: { cx: number; cy: number; radius: number };
   rotation?: ObjectRotation;
+  gridlines?: number;
 }
 
 export interface ObjectRotation {
@@ -781,7 +815,7 @@ export function objectRotation(x: number, y: number, z: number, angleDegrees: nu
   return objectTransform({ x, y, z, angleDegrees }, undefined);
 }
 
-type Matrix2 = [number, number, number, number];
+export type Matrix2 = [number, number, number, number];
 
 function multiply2(outer: Matrix2, inner: Matrix2): Matrix2 {
   return [
@@ -819,21 +853,75 @@ function skewForward(ax: number, ay: number): Matrix2 | undefined {
   return [1, tanAx, tanAy, 1];
 }
 
+export function objectForwardTransform(
+  rotate: { x: number; y: number; z: number; angleDegrees: number } | undefined,
+  skew: { ax: number; ay: number } | undefined,
+): Matrix2 | undefined {
+  const rotation = rotate ? rotationForward(rotate.x, rotate.y, rotate.z, rotate.angleDegrees) : undefined;
+  const skewed = skew ? skewForward(skew.ax, skew.ay) : undefined;
+  if (!rotation && !skewed) return undefined;
+  return rotation && skewed ? multiply2(rotation, skewed) : (rotation ?? skewed)!;
+}
+
+export function invertedTransform(forward: Matrix2 | undefined): ObjectRotation | undefined {
+  return forward && invert2(forward);
+}
+
 export function objectTransform(
   rotate: { x: number; y: number; z: number; angleDegrees: number } | undefined,
   skew: { ax: number; ay: number } | undefined,
 ): ObjectRotation | undefined {
-  const rotation = rotate ? rotationForward(rotate.x, rotate.y, rotate.z, rotate.angleDegrees) : undefined;
-  const skewed = skew ? skewForward(skew.ax, skew.ay) : undefined;
-  if (!rotation && !skewed) return undefined;
-  const forward = rotation && skewed ? multiply2(rotation, skewed) : (rotation ?? skewed)!;
-  return invert2(forward);
+  return invertedTransform(objectForwardTransform(rotate, skew));
+}
+
+export function applyMatrix2(matrix: Matrix2 | undefined, x: number, y: number): [number, number] {
+  if (!matrix) return [x, y];
+  const [a, b, c, d] = matrix;
+  return [a * x + b * y, c * x + d * y];
 }
 
 export function objectToShape(rotation: ObjectRotation | undefined, x: number, y: number): [number, number] {
-  if (!rotation) return [x, y];
-  const [a, b, c, d] = rotation.inverse;
-  return [a * x + b * y, c * x + d * y];
+  return applyMatrix2(rotation?.inverse, x, y);
+}
+
+export interface PlacedShape {
+  cx: number;
+  cy: number;
+  radius: number;
+  transform: Matrix2 | undefined;
+}
+
+export function placeShape(
+  region: { cx: number; cy: number; radius: number },
+  rest: { cx: number; cy: number; radius: number },
+  offset: { dx: number; dy: number; scale: number; transform: Matrix2 | undefined },
+): PlacedShape {
+  const [dx, dy] = applyMatrix2(offset.transform, region.cx - rest.cx, region.cy - rest.cy);
+  return {
+    cx: rest.cx + offset.dx + dx * offset.scale,
+    cy: rest.cy + offset.dy + dy * offset.scale,
+    radius: region.radius * offset.scale,
+    transform: offset.transform,
+  };
+}
+
+export function placedShapeMap(place: PlacedShape): (nx: number, ny: number) => [number, number] {
+  return (nx, ny) => {
+    const [x, y] = applyMatrix2(place.transform, nx, ny);
+    return [place.cx + x * place.radius, place.cy + y * place.radius];
+  };
+}
+
+export function restingShapeMap(
+  place: PlacedShape,
+  region: { cx: number; cy: number; radius: number },
+): (x: number, y: number) => [number, number] {
+  const inverse = invertedTransform(place.transform)?.inverse;
+  const shrink = region.radius / place.radius;
+  return (x, y) => {
+    const [dx, dy] = applyMatrix2(inverse, x - place.cx, y - place.cy);
+    return [region.cx + dx * shrink, region.cy + dy * shrink];
+  };
 }
 
 export function isActiveObject(object: ObjectGeometryInput): boolean {
@@ -843,6 +931,7 @@ export function isActiveObject(object: ObjectGeometryInput): boolean {
 
 export function isDrawnObject(object: ObjectGeometryInput, lights: readonly { order: number }[] = []): boolean {
   if (object.radius <= 0 || !(object.rotation?.visible ?? true)) return false;
+  if ((object.gridlines ?? 0) > 0) return true;
   if (lights.some((light) => occludes(object.order, light.order))) return true;
   if (isBehindMask(object)) return (object.fill?.a ?? 0) > 0 || object.lift !== undefined;
   return object.elevation !== 0 || (object.fill?.a ?? 0) > 0 || object.lift !== undefined;
@@ -852,7 +941,7 @@ function cappedByElevation<T extends ObjectGeometryInput>(objects: T[]): T[] {
   return objects.sort((a, b) => Math.abs(b.elevation) - Math.abs(a.elevation)).slice(0, MAX_MASK_OBJECTS);
 }
 
-export function activeMaskObjects<T extends ObjectGeometryInput>(objects: T[]): T[] {
+export function activeMaskObjects<T extends ObjectGeometryInput>(objects: readonly T[]): T[] {
   return cappedByElevation(objects.filter(isActiveObject));
 }
 

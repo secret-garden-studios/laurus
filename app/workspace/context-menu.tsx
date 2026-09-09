@@ -213,8 +213,9 @@ interface ContextMenu {
   media: ContextMenuMedia;
   framesCacheRef: RefObject<Map<string, LaurusFrame[]>>;
   transform?: LaurusTransform;
+  anchorOffset?: { dx: number; dy: number };
 }
-export default function ContextMenu({ media, framesCacheRef, transform }: ContextMenu) {
+export default function ContextMenu({ media, framesCacheRef, transform, anchorOffset }: ContextMenu) {
   const { coreState, dispatch } = useContext(CoreContext);
   const { sendMaskLightUpdate, sendMaskObjectUpdate, closeMaskLightSocket, closeMaskObjectSocket } =
     useContext(SocketContext);
@@ -610,8 +611,13 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
 
   const anchoredCenter = useMemo(() => {
     if (!anchoredTarget) return undefined;
-    return maskSubElementCenter(anchoredTarget.meta, coreState.canvasMasks.get(media.key), anchoredTarget.subject);
-  }, [anchoredTarget, coreState.canvasMasks, media.key]);
+    return maskSubElementCenter(
+      anchoredTarget.meta,
+      coreState.canvasMasks.get(media.key),
+      anchoredTarget.subject,
+      anchorOffset,
+    );
+  }, [anchoredTarget, coreState.canvasMasks, media.key, anchorOffset]);
 
   const anchoredPlacement = useMemo(() => {
     if (!anchoredTarget || !anchoredCenter) return undefined;
@@ -1743,6 +1749,11 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                             type: UIActionType.DeleteCarouselEntry,
                             key: media.key,
                             lightId: media.lightId,
+                          });
+                          uiDispatch({
+                            type: UIActionType.SetGridlines,
+                            subject: { key: media.key, type: "light", lightId: media.lightId },
+                            value: 0,
                           });
                           break;
                         }

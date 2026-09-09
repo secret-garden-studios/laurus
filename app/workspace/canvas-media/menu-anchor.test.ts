@@ -207,6 +207,25 @@ describe("maskSubElementCenter", () => {
     assert.ok(Math.abs(center.y - 100) < 1e-9);
   });
 
+  it("follows an animated subject, so the caret keeps pointing at where it is drawn", () => {
+    const moved = maskSubElementCenter(maskMeta(), maskResult(), { kind: "light", id: 1 }, { dx: 20, dy: -10 });
+    assert.ok(moved);
+    assert.ok(Math.abs(moved.x - 110) < 1e-9, `the delta rides the same projection: ${moved.x}`);
+    assert.ok(Math.abs(moved.y - 45) < 1e-9, `on both axes: ${moved.y}`);
+  });
+
+  it("scales an animated delta with the mask, as it does the rest position", () => {
+    const moved = maskSubElementCenter(
+      maskMeta({ scale_x: 2 }),
+      maskResult(),
+      { kind: "object", id: 1 },
+      { dx: 20, dy: 0 },
+    );
+    assert.ok(moved);
+    assert.ok(Math.abs(moved.x - 220) < 1e-9, `stretched with the mask: ${moved.x}`);
+    assert.ok(Math.abs(moved.y - 50) < 1e-9, `and unmoved across it: ${moved.y}`);
+  });
+
   it("falls back to the light's own size when it has no shaped radius", () => {
     const sized = maskResult({ lights: [light({ radius: 0, size: 80 })] });
     assert.deepEqual(maskSubElementCenter(maskMeta(), sized, { kind: "light", id: 1 }), { x: 100, y: 50 });

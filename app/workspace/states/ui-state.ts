@@ -158,6 +158,24 @@ export function editedRegion(session: MaskEditSession): EditableRegion | undefin
   return session.candidates[session.currentIndex]?.object;
 }
 
+export function gridlinesValue(state: UIState, subject: LaurusSelectedElement | undefined): number {
+  if (subject?.type === "light") {
+    return state.lightGridlines.find((g) => g.key === subject.key && g.lightId === subject.lightId)?.value ?? 0;
+  }
+  if (subject?.type === "object") {
+    return state.objectGridlines.find((g) => g.key === subject.key && g.objectId === subject.objectId)?.value ?? 0;
+  }
+  return 0;
+}
+
+export function maskEditSubject(session: MaskEditSession): LaurusSelectedElement | undefined {
+  const region = editedRegion(session);
+  if (!region) return undefined;
+  return session.subject === "light"
+    ? { key: session.maskKey, type: "light", lightId: region.id }
+    : { key: session.maskKey, type: "object", objectId: region.id };
+}
+
 export function isMaskEditSubject(session: MaskEditSession, entry: CarouselEntry): boolean {
   if (entry.key !== session.maskKey) return false;
   if (entry.type === "light") return session.subject === "light" && entry.lightId === session.light.id;
@@ -316,8 +334,8 @@ export interface UIState {
   keyframeDraft: KeyframeDraft | undefined;
   scrubRevision: number;
   maskEdit: MaskEditSession | undefined;
-  gridlinesBright: boolean;
-  lightGridlines: { key: string; lightId: number; value: number } | undefined;
+  lightGridlines: { key: string; lightId: number; value: number }[];
+  objectGridlines: { key: string; objectId: number; value: number }[];
   copy: CopySettings;
 }
 
@@ -368,8 +386,8 @@ export const defaultUIState: UIState = {
     fill: OBJECT_FILL_DEFAULT,
   },
   maskEdit: undefined,
-  gridlinesBright: false,
-  lightGridlines: undefined,
+  lightGridlines: [],
+  objectGridlines: [],
   copy: { ...defaultCopySettings },
   keyframeDraft: undefined,
   scrubRevision: 0,
@@ -390,8 +408,7 @@ export enum UIActionType {
   SetActiveElement,
   SetSelectedElement,
   SetLightFrameBackground,
-  SetGridlinesBright,
-  SetLightGridlines,
+  SetGridlines,
   SetEffectClipboard,
   SetRecordingLight,
   AddCarouselEntry,
@@ -458,11 +475,7 @@ export type UIAction =
       value: LaurusSelectedElement | undefined;
     }
   | { type: UIActionType.SetLightFrameBackground; value: boolean }
-  | { type: UIActionType.SetGridlinesBright; value: boolean }
-  | {
-      type: UIActionType.SetLightGridlines;
-      value: { key: string; lightId: number; value: number } | undefined;
-    }
+  | { type: UIActionType.SetGridlines; subject: LaurusSelectedElement; value: number }
   | { type: UIActionType.SetEffectClipboard; value: LaurusEffect }
   | { type: UIActionType.SetRecordingLight; value: boolean }
   | { type: UIActionType.AddCarouselEntry; value: CarouselEntry }
@@ -728,11 +741,19 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
     case UIActionType.SetLightFrameBackground: {
       return { ...state, lightFrameBackground: action.value };
     }
-    case UIActionType.SetLightGridlines: {
-      return { ...state, lightGridlines: action.value };
-    }
-    case UIActionType.SetGridlinesBright: {
-      return { ...state, gridlinesBright: action.value };
+    case UIActionType.SetGridlines: {
+      const { subject, value } = action;
+      if (subject.type === "light") {
+        const rest = state.lightGridlines.filter((g) => !(g.key === subject.key && g.lightId === subject.lightId));
+        const kept = value > 0 ? [...rest, { key: subject.key, lightId: subject.lightId, value }] : rest;
+        return { ...state, lightGridlines: kept };
+      }
+      if (subject.type === "object") {
+        const rest = state.objectGridlines.filter((g) => !(g.key === subject.key && g.objectId === subject.objectId));
+        const kept = value > 0 ? [...rest, { key: subject.key, objectId: subject.objectId, value }] : rest;
+        return { ...state, objectGridlines: kept };
+      }
+      return state;
     }
     case UIActionType.SetEffectClipboard: {
       return { ...state, effectClipboard: { ...action.value } };

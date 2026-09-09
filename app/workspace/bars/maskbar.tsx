@@ -1,4 +1,4 @@
-import { useContext, useMemo, useRef, useState, useCallback, useEffect } from "react";
+import { useContext, useRef, useState, useCallback, useEffect } from "react";
 import { CoreContext, HoverContext, UIContext, MaskContext } from "../workspace.client";
 import { SvgRepo, texture300 } from "@/app/svg-repo";
 import Toggle from "@/app/components/toggle";
@@ -8,12 +8,7 @@ import { LaurusProjectMask, LaurusProjectResult, updateProject } from "@/app/pro
 import { UNAUTHORIZED_EDIT } from "@/app/landing.server";
 import { WorkspaceResolution } from "../workspace.config";
 import { TEXTURE_MIX_DEFAULT } from "../mask-gl";
-
-const GRIDLINES_OPTIONS = [
-  { label: "off", value: 0 },
-  { label: "dim", value: 0.5 },
-  { label: "bright", value: 1 },
-] as const;
+import Gridlines from "./gridlines";
 
 function maskbarSizes(resolution: WorkspaceResolution) {
   switch (resolution.type) {
@@ -287,7 +282,7 @@ function MaskGenerationControls() {
           ...dynamicSizes.toggle.div,
         }}
       >
-        <Gridlines value={textureMix} onChange={setTextureMix} dynamicSizes={dynamicSizes} />
+        <Gridlines value={textureMix} onChange={setTextureMix} segmentStyle={dynamicSizes.input.label} />
       </div>
       <div
         style={{
@@ -389,7 +384,7 @@ function MaskMeshControls({ maskKey }: MaskMeshControls) {
         <Gridlines
           value={maskMeta?.texture ?? TEXTURE_MIX_DEFAULT}
           onChange={saveGridlinesField}
-          dynamicSizes={dynamicSizes}
+          segmentStyle={dynamicSizes.input.label}
         />
       </div>
       <div
@@ -476,53 +471,5 @@ function CopyToggle({ dynamicSizes }: CopyToggle) {
         translateX={dynamicSizes.toggle.translateX}
       />
     </div>
-  );
-}
-
-interface Gridlines {
-  value: number;
-  onChange: (value: number) => void;
-  dynamicSizes: MaskbarSizes;
-}
-
-function Gridlines({ value, onChange, dynamicSizes }: Gridlines) {
-  const selected = useMemo(
-    () =>
-      GRIDLINES_OPTIONS.reduce((closest, option) =>
-        Math.abs(option.value - value) < Math.abs(closest.value - value) ? option : closest,
-      ).value,
-    [value],
-  );
-
-  return (
-    <>
-      <span>{"gridlines"}</span>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          letterSpacing: 2,
-        }}
-      >
-        {GRIDLINES_OPTIONS.map((option) => {
-          const isSelected = selected === option.value;
-          return (
-            <span
-              key={option.label}
-              onClick={() => onChange(option.value)}
-              style={{
-                cursor: "pointer",
-                color: isSelected ? "inherit" : "rgb(67,67,67)",
-                textShadow: isSelected ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
-                padding: "4px 8px",
-                ...dynamicSizes.input.label,
-              }}
-            >
-              {option.label}
-            </span>
-          );
-        })}
-      </div>
-    </>
   );
 }

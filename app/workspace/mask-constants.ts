@@ -38,10 +38,16 @@ export const OBJECT_SUBDIVISION_TOLERANCE_PX = 0.75;
 export const MASK_STROKE_WIDTH_PX = 1.0;
 export const MASK_HIGHLIGHT_STROKE_WIDTH_PX = 1.0;
 export const MASK_STROKE_COLOR: [number, number, number, number] = [1.0, 1.0, 1.0, 0.2];
-export const HIGHLIGHT_SELECTED_COLOR: [number, number, number, number] = [0.258824, 0.521569, 0.956863, 1.0];
-export const HIGHLIGHT_SIBLING_COLOR: [number, number, number, number] = [0.258824, 0.521569, 0.956863, 0.35];
+export const HIGHLIGHT_SELECTED_COLOR: [number, number, number, number] = [1, 1, 1.0, 0.8];
+export const HIGHLIGHT_SIBLING_COLOR: [number, number, number, number] = [1, 1, 1.0, 0.25];
 export const HIGHLIGHT_MOVING_COLOR: [number, number, number, number] = [1, 1, 1, 0.15];
-export const GRIDLINES_DIM_ALPHA = 0.5;
+export const HIGHLIGHT_SHADOW_COLOR: [number, number, number, number] = [0, 0, 0, 0.6];
+export const HIGHLIGHT_SHADOW_OFFSET_PX: [number, number] = [0, 1];
+export const HIGHLIGHT_SHADOW_BLUR_PX = 1;
+export const GRIDLINES_ADDED_COLOR: [number, number, number, number] = [1, 1, 1, 1];
+export const GRIDLINES_DIM = 0.5;
+export const GRIDLINES_BRIGHT = 1;
+export const GRIDLINES_DIM_ALPHA = 0.35;
 export const GRIDLINES_BRIGHT_ALPHA = 1;
 export const MASK_BACKING_VERTEX_COUNT = 6;
 export const MASK_BACKING_GREY_LEVEL = 0.55;
@@ -51,9 +57,15 @@ export function highlightCss(color: [number, number, number, number]): string {
   return `rgba(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)}, ${a})`;
 }
 
-export function highlightShapeEditColor(bright: boolean): [number, number, number, number] {
-  return [0.258824, 0.521569, 0.956863, bright ? GRIDLINES_BRIGHT_ALPHA : GRIDLINES_DIM_ALPHA];
+export function gridlinesHighlightAlpha(gridlines: number): number {
+  return Math.max(gridlines, GRIDLINES_DIM) * MASK_STROKE_COLOR[3];
 }
-export function highlightObjectReviewAddedColor(bright: boolean): [number, number, number, number] {
-  return [0.984314, 0.65098, 0.152941, bright ? GRIDLINES_BRIGHT_ALPHA : GRIDLINES_DIM_ALPHA];
+
+export function gridlinesHighlightColor(gridlines: number): [number, number, number, number] {
+  const [r, g, b] = MASK_STROKE_COLOR;
+  return [r, g, b, gridlinesHighlightAlpha(gridlines)];
+}
+
+export function highlightObjectReviewAddedColor(gridlines: number): [number, number, number, number] {
+  return [0.984314, 0.65098, 0.152941, gridlines >= GRIDLINES_BRIGHT ? GRIDLINES_BRIGHT_ALPHA : GRIDLINES_DIM_ALPHA];
 }

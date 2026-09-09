@@ -193,7 +193,6 @@ describe("buildObjectShapeFromRings -- the distance field", () => {
   it("reads a circle as depth = radius - distance, which is the shapeless case", () => {
     const result = buildObjectShapeFromRings([circleRing(37, [12, -5])]);
     assert.ok(result.ok);
-    // normalized to unit extent, so the deepest point is 1 away from the rim
     assert.ok(Math.abs(result.shape.maxDepth - 1) < 0.02, `maxDepth = ${result.shape.maxDepth}`);
     for (const at of [0, 0.25, 0.5, 0.75]) {
       for (const angle of [0, 1.1, 2.4, -2.9]) {
@@ -207,7 +206,6 @@ describe("buildObjectShapeFromRings -- the distance field", () => {
     const result = buildObjectShapeFromRings([squareRing(20)]);
     assert.ok(result.ok);
     assert.ok(Math.abs(objectShapeProfileU(result.shape, 0, 0)) < 0.02);
-    // a square normalizes so its corners sit at 1; the edge midpoint is nearer
     const edge = objectShapeProfileU(result.shape, 1 / Math.SQRT2, 0);
     assert.ok(Math.abs(edge - 1) < 0.05, `at the edge midpoint u = ${edge}`);
   });
@@ -221,12 +219,8 @@ describe("buildObjectShapeFromRings -- the distance field", () => {
   });
 
   it("keeps a star's lobes rather than filling them in", () => {
-    // six points rather than five so the bounding box centres on the origin
-    // and the normalized geometry is the star's own -- an odd-pointed star
-    // normalizes about a centre offset toward its flat side
     const result = buildObjectShapeFromRings([starRing(10, 4, 6)]);
     assert.ok(result.ok);
-    // a point out along a lobe is inside; the same distance round into a notch is not
     const lobe = objectShapeDepthAt(result.shape, 0.85, 0);
     const notch = objectShapeDepthAt(result.shape, 0.85 * Math.cos(Math.PI / 6), 0.85 * Math.sin(Math.PI / 6));
     assert.ok(lobe > 0, `along a lobe depth = ${lobe}`);
@@ -238,7 +232,6 @@ describe("buildObjectShapeFromRings -- shapes the angular table used to refuse",
   it("accepts a horseshoe, which is not star-shaped", () => {
     const result = buildObjectShapeFromRings([horseshoeRing(10, 6)]);
     assert.ok(result.ok, result.ok ? "" : result.reason);
-    // the gap really is a gap: the field is negative straight out through it
     assert.ok(objectShapeDepthAt(result.shape, 0.8, 0) < 0, "the mouth of the horseshoe is outside");
     assert.ok(objectShapeDepthAt(result.shape, -0.8, 0) > 0, "the closed end is inside");
   });
@@ -251,8 +244,6 @@ describe("buildObjectShapeFromRings -- shapes the angular table used to refuse",
   });
 
   it("accepts a hole traced the same way round as its outer ring", () => {
-    // even-odd rather than nonzero winding: the server's contours and an
-    // illustrator's export make no promise about orientation
     const outer = circleRing(20);
     const innerSameWinding = circleRing(9);
     const innerReversed = [...circleRing(9)].reverse();
@@ -266,7 +257,6 @@ describe("buildObjectShapeFromRings -- shapes the angular table used to refuse",
   it("accepts several detached pieces", () => {
     const result = buildObjectShapeFromRings([circleRing(10, [-30, 0]), circleRing(10, [30, 0])]);
     assert.ok(result.ok, result.ok ? "" : result.reason);
-    // normalized extent 1 spans both, so each piece sits either side of centre
     assert.ok(objectShapeDepthAt(result.shape, -0.75, 0) > 0, "the left piece is inside");
     assert.ok(objectShapeDepthAt(result.shape, 0.75, 0) > 0, "the right piece is inside");
     assert.ok(objectShapeDepthAt(result.shape, 0, 0) < 0, "the space between them is not");
@@ -295,7 +285,6 @@ describe("normalizeRings -- the convention the server mirrors", () => {
   });
 
   it("uses a centre the shape need not contain", () => {
-    // the whole reason it is the bounding box and not the area centroid
     const normalized = normalizeRings([circleRing(10, [-30, 0]), circleRing(10, [30, 0])]);
     assert.ok(Math.abs(normalized.center[0]) < 1e-6, "between the two pieces");
     assert.ok(Math.max(...normalized.rings.flatMap((r) => distances(r))) <= 1 + 1e-9);
@@ -309,12 +298,6 @@ describe("normalizeRings -- the convention the server mirrors", () => {
 
 describe("the persisted shape round-trips", () => {
   it("re-reads from its own normalized path to the same field", () => {
-    // A path persists at five decimals and is re-simplified on the way back
-    // in. Simplification is greedy, so a coordinate moving in the last decimal
-    // can flip which vertex it keeps and shift the outline by up to its own
-    // tolerance -- a quarter of a texel. That is the real bound here, and it is
-    // well under what relief can show; anything beyond it would mean reloading
-    // a mask moved geometry nobody edited.
     const texel = (2 * OBJECT_SDF_MARGIN) / 128;
     const tolerance = texel * 0.4;
     for (const ring of [circleRing(30), squareRing(12), starRing(20, 8), horseshoeRing(15, 9)]) {
@@ -359,8 +342,6 @@ describe("an object shape authored by the server", () => {
   });
 
   it("reads a multi-subpath M/C/Z path the way detection emits it", () => {
-    // an outline and its hole, as curves rather than the polyline the angular
-    // table was limited to
     const outer = "M0,-1C0.55,-1 1,-0.55 1,0C1,0.55 0.55,1 0,1C-0.55,1 -1,0.55 -1,0C-1,-0.55 -0.55,-1 0,-1Z";
     const hole =
       "M0,-0.4C0.22,-0.4 0.4,-0.22 0.4,0C0.4,0.22 0.22,0.4 0,0.4C-0.22,0.4 -0.4,0.22 -0.4,0C-0.4,-0.22 -0.22,-0.4 0,-0.4Z";
@@ -372,11 +353,6 @@ describe("an object shape authored by the server", () => {
 });
 
 describe("a shape authored by this project's server", () => {
-  // Verbatim output of region_object_geometry on a traced crescent -- the
-  // exact shape the previous encoding could not represent at all, since a ray
-  // from its centroid crosses the outline twice. Kept as a fixture because it
-  // is the only thing that catches the two implementations' normalization
-  // conventions drifting apart, which neither suite can see on its own.
   const SERVER_CRESCENT =
     "M0.11351,-0.90902C0.0071,-0.9105 -0.09727,-0.89095 -0.19557,-0.85448" +
     "C-0.29763,-0.81662 -0.40138,-0.75954 -0.48647,-0.68176C-0.57942,-0.59679 -0.67136,-0.47166 -0.72283,-0.3545" +
@@ -396,10 +372,6 @@ describe("a shape authored by this project's server", () => {
     const rings = flattenPathData(SERVER_CRESCENT);
     assert.equal(rings.length, 1);
     const { center, scale } = normalizeRings(rings);
-    // the server measures on the flattened curve for exactly this reason: it
-    // fits anchors at 1 but the curve bows past them, and if it normalized the
-    // traced ring instead the object would render a fraction larger than the
-    // reach it records
     assert.ok(Math.hypot(...center) < 1e-4, `centre drifted to ${center}`);
     assert.ok(Math.abs(scale - 1) < 1e-4, `scale drifted to ${scale}`);
   });
@@ -409,15 +381,12 @@ describe("a shape authored by this project's server", () => {
     assert.ok(shape, "the client refused a shape its own server emitted");
     assert.ok(objectShapeDepthAt(shape, -0.55, 0) > 0, "the solid side is inside");
     assert.ok(objectShapeDepthAt(shape, 0.55, 0) < 0, "the bite is outside");
-    // a crescent is thin: its deepest point is nowhere near its extent
     assert.ok(shape.maxDepth > 0.2 && shape.maxDepth < 0.5, `maxDepth ${shape.maxDepth}`);
   });
 
   it("agrees with the server about where the outline reaches in mesh units", () => {
     const shape = sampleObjectShapePath(SERVER_CRESCENT);
     assert.ok(shape);
-    // maxExtent is 1, so the furthest the outline reaches from (cx, cy) is
-    // exactly the stored radius -- what every hit test and swell bound assumes
     assert.equal(shape.maxExtent, 1);
     const reach = Math.max(...flattenPathData(shape.path).flatMap((r) => distances(r)));
     assert.ok(Math.abs(reach * SERVER_RADIUS - SERVER_RADIUS) < 0.05, `reach ${reach}`);
@@ -447,15 +416,11 @@ describe("cachedObjectShape -- the render path's entry point", () => {
     const first = buildObjectShapeFromRings([squareRing(20)]);
     const second = buildObjectShapeFromRings([squareRing(5)]);
     assert.ok(first.ok && second.ok);
-    // same silhouette at different sizes normalizes to the same path
     assert.equal(first.shape.path, second.shape.path);
     assert.equal(cachedObjectShape(first.shape.path), cachedObjectShape(second.shape.path));
   });
 
   it("keeps a draft and a full-resolution build apart", () => {
-    // the shape editor rasterizes at draft resolution while a handle is being
-    // dragged; the draft it leaves behind must not be served afterwards as the
-    // real thing
     const built = buildObjectShapeFromRings([starRing(10, 4, 6)]);
     assert.ok(built.ok);
     const draft = cachedObjectShape(built.shape.path, 64);
@@ -464,14 +429,11 @@ describe("cachedObjectShape -- the render path's entry point", () => {
     assert.equal(draft.tile, 64);
     assert.equal(full.tile, 128);
     assert.notEqual(draft, full);
-    // and each is still cached in its own right
     assert.equal(cachedObjectShape(built.shape.path, 64), draft);
     assert.equal(cachedObjectShape(built.shape.path), full);
   });
 
   it("agrees between resolutions about what is inside", () => {
-    // a draft is coarser, not different -- otherwise the relief would jump
-    // when the pointer is released
     const built = buildObjectShapeFromRings([circleRing(20)]);
     assert.ok(built.ok);
     const draft = cachedObjectShape(built.shape.path, 64);
@@ -493,8 +455,6 @@ describe("cachedObjectShape -- the render path's entry point", () => {
   });
 
   it("evicts rather than growing without bound", () => {
-    // each entry now carries a tile-sized field, and the shape editor mints a
-    // new path per pointermove
     const held = buildObjectShapeFromRings([squareRing(3)]);
     assert.ok(held.ok);
     const first = cachedObjectShape(held.shape.path);
@@ -507,18 +467,13 @@ describe("cachedObjectShape -- the render path's entry point", () => {
 
 describe("the signed distance field's rasterizer", () => {
   it("measures true distance to the outline, not a texel-grid approximation", () => {
-    // A square of half-extent 0.5 leaves a wide flat interior whose distance to
-    // the nearest edge is exactly `0.5 - |x|` along the x axis.
     const field = signedDistanceField([squareRing(0.5)], 64);
     assert.ok(field);
     const tile = 64;
-    // walk the middle row outward from the centre and check every texel
     const row = tile / 2;
     for (let col = tile / 2; col < tile; col++) {
       const x = sdfTexelCoordinate(col, tile);
       const y = sdfTexelCoordinate(row, tile);
-      // inside the flat band the nearest edge is the right one, until the
-      // corner's diagonal takes over -- so only assert where |y| < the x-edge
       if (Math.abs(y) > 0.5) continue;
       const expected = 0.5 - Math.abs(x);
       const actual = field.sdf[row * tile + col];
@@ -539,13 +494,9 @@ describe("the signed distance field's rasterizer", () => {
         const x = sdfTexelCoordinate(col, tile);
         const y = sdfTexelCoordinate(row, tile);
         const reach = Math.hypot(x, y);
-        // skip the centre, where the gradient is genuinely undefined -- every
-        // direction is equally far from a circle's rim
         if (reach < 0.05) continue;
         const gx = field.grad[at * 2] / 127;
         const gy = field.grad[at * 2 + 1] / 127;
-        // inside a circle the distance grows toward the centre, outside it
-        // grows toward the rim: either way the gradient points inward
         const inward = -(gx * x + gy * y) / reach;
         assert.ok(inward > 0.9, `texel (${col}, ${row}) gradient (${gx}, ${gy}) does not point inward`);
         assert.ok(Math.abs(Math.hypot(gx, gy) - 1) < 0.02, "the gradient is a unit vector");
@@ -554,8 +505,6 @@ describe("the signed distance field's rasterizer", () => {
   });
 
   it("signs the inside of a hole negative however its ring was wound", () => {
-    // even-odd, so a hole traced the same way round as its outer ring is still
-    // a hole -- the property insideMask exists for
     const reversed = circleRing(0.4).slice().reverse();
     for (const hole of [circleRing(0.4), reversed]) {
       const field = signedDistanceField([circleRing(1), hole], 64);
@@ -589,7 +538,6 @@ describe("the signed distance field's rasterizer", () => {
     let deepest = 0;
     for (const d of field.sdf) if (d > deepest) deepest = d;
     assert.ok(Math.abs(field.maxDepth - deepest) < 1e-6, "maxDepth is the largest distance in the field");
-    // the deepest point of a circle of radius 0.5 is its centre, half a unit in
     assert.ok(Math.abs(field.maxDepth - 0.5) < 0.02, `a 0.5 circle is 0.5 deep, got ${field.maxDepth}`);
   });
 });

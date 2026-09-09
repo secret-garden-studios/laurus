@@ -2,12 +2,10 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { backToFrontMedia, frontToBackMedia, restackGroupWithinProject, type StackedMedia } from "./media-stack.ts";
 
-/** A project stack, given back to front, as `key` at `order` = its index. */
 function project(...keys: string[]): StackedMedia[] {
   return keys.map((key, order) => ({ type: "img" as const, key, order }));
 }
 
-/** The whole project stack after a drop, front to back. */
 function applied(items: StackedMedia[], groupFrontToBack: string[]): string[] {
   const moved = restackGroupWithinProject(items, groupFrontToBack);
   const next = items.map((item) => ({ ...item, order: moved.get(item.key) ?? item.order }));
@@ -48,14 +46,11 @@ describe("backToFrontMedia", () => {
 
 describe("restackGroupWithinProject", () => {
   it("takes the group's keys front first, the way the list reads", () => {
-    // project a,b,c back to front; the whole project is one group, dragged so
-    // that a is now frontmost
     const items = project("a", "b", "c");
     assert.deepEqual(applied(items, ["a", "c", "b"]), ["a", "c", "b"]);
   });
 
   it("leaves media outside the group exactly where it was", () => {
-    // stack a,b,c,d,e back to front; the group is b, c, e
     const items = project("a", "b", "c", "d", "e");
     const moved = restackGroupWithinProject(items, ["b", "e", "c"]);
     assert.equal(moved.has("a"), false);
@@ -64,9 +59,7 @@ describe("restackGroupWithinProject", () => {
 
   it("keeps the group's own slots and only trades who holds them", () => {
     const items = project("a", "b", "c", "d", "e");
-    // group b(1), c(2), e(4) dragged to read b, e, c front-to-back
     const next = restackGroupWithinProject(items, ["b", "e", "c"]);
-    // the slots 1, 2 and 4 are still the group's, back to front: c, e, b
     assert.equal(next.get("c"), 1);
     assert.equal(next.get("e"), 2);
     assert.equal(next.get("b"), 4);
@@ -75,7 +68,6 @@ describe("restackGroupWithinProject", () => {
   it("puts the frontmost listed key at the group's frontmost slot", () => {
     const items = project("a", "b", "c", "d", "e");
     const order = applied(items, ["b", "e", "c"]);
-    // d sits between the group's middle and top slots and stays there
     assert.deepEqual(order, ["b", "d", "e", "c", "a"]);
   });
 
@@ -104,7 +96,6 @@ describe("restackGroupWithinProject", () => {
         .sort(),
       ["a", "b", "c", "d"],
     );
-    // and the orders it produces are still a dense 0..n-1
     assert.deepEqual(
       next.map((i) => i.order).sort((x, y) => x - y),
       [0, 1, 2, 3],
@@ -123,7 +114,6 @@ describe("restackGroupWithinProject", () => {
       { type: "svg", key: "s", order: 1 },
       { type: "mask", key: "m", order: 2 },
     ];
-    // read front first: m, s, i -- drag i to the front
     assert.deepEqual(applied(items, ["i", "m", "s"]), ["i", "m", "s"]);
   });
 });

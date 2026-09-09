@@ -67,6 +67,7 @@ import {
   MaskAppearanceOverride,
   MaskImperativeHandle,
   MaskPlaybackSession,
+  OutlineOffset,
 } from "./canvas-media/project-mask-item";
 import { useToolCursor } from "./hooks/useToolCursor";
 import {
@@ -373,6 +374,7 @@ export interface MaskNotifiers {
   notifyMaskObjectReviewPreview: MaskNotifyValue["notifyMaskObjectReviewPreview"];
   notifyCanvasZoomChanged: MaskNotifyValue["notifyCanvasZoomChanged"];
   notifyMaskObjectsUpdated: MaskNotifyValue["notifyMaskObjectsUpdated"];
+  maskAnimatedOffset: MaskNotifyValue["maskAnimatedOffset"];
 }
 
 export const MaskNotifyContext = createContext<MaskNotifiers>({
@@ -393,6 +395,7 @@ export const MaskNotifyContext = createContext<MaskNotifiers>({
   notifyMaskObjectReviewPreview: () => {},
   notifyCanvasZoomChanged: () => {},
   notifyMaskObjectsUpdated: () => {},
+  maskAnimatedOffset: () => undefined,
   notifyMaskRetouchRequested: async () => {},
 });
 
@@ -428,6 +431,7 @@ export interface MaskNotifyValue {
   notifyMaskObjectReviewPreview: (maskKey: string, indices: Set<number> | undefined, diffBase?: Set<number>) => void;
   notifyCanvasZoomChanged: (zoom: number) => void;
   notifyMaskObjectsUpdated: (maskKey: string, updated: LaurusMaskResult) => void;
+  maskAnimatedOffset: (maskKey: string, subject: { type: "light" | "object"; id: number }) => OutlineOffset | undefined;
 }
 
 export interface UIContextProps {
@@ -535,6 +539,7 @@ const defaultMaskNotifyValue: MaskNotifyValue = {
   notifyMaskObjectReviewPreview: () => {},
   notifyCanvasZoomChanged: () => {},
   notifyMaskObjectsUpdated: () => {},
+  maskAnimatedOffset: () => undefined,
 };
 
 export interface MaskContextProps extends UseMaskPreview, MaskNotifyValue {}
@@ -1409,6 +1414,11 @@ export default function Workspace({
   const notifyMaskObjectsUpdated = useCallback((maskKey: string, updated: LaurusMaskResult) => {
     maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.syncObjects(updated));
   }, []);
+  const maskAnimatedOffset = useCallback(
+    (maskKey: string, subject: { type: "light" | "object"; id: number }) =>
+      maskHandlesRef.current?.get(maskKey)?.values().next().value?.animatedOffsetFor(subject),
+    [],
+  );
 
   const lightMeshSection = useCallback(
     async (maskKey: string, polygonIndices: number[], size: number) => {
@@ -1740,8 +1750,12 @@ export default function Workspace({
 
         if (removed) {
           uiDispatch({ type: UIActionType.DeleteCarouselEntry, key: maskKey, lightId });
-          if (uiState.lightGridlines?.key === maskKey && uiState.lightGridlines.lightId === lightId) {
-            uiDispatch({ type: UIActionType.SetLightGridlines, value: undefined });
+          if (uiState.lightGridlines.some((g) => g.key === maskKey && g.lightId === lightId)) {
+            uiDispatch({
+              type: UIActionType.SetGridlines,
+              subject: { key: maskKey, type: "light", lightId },
+              value: 0,
+            });
           }
           if (
             uiState.activeElement?.key === maskKey &&
@@ -1852,6 +1866,13 @@ export default function Workspace({
 
         if (removed) {
           uiDispatch({ type: UIActionType.DeleteCarouselEntry, key: maskKey, objectId });
+          if (uiState.objectGridlines.some((g) => g.key === maskKey && g.objectId === objectId)) {
+            uiDispatch({
+              type: UIActionType.SetGridlines,
+              subject: { key: maskKey, type: "object", objectId },
+              value: 0,
+            });
+          }
           if (
             uiState.activeElement?.key === maskKey &&
             uiState.activeElement.type === "object" &&
@@ -1886,6 +1907,7 @@ export default function Workspace({
       coreState.apiOrigin,
       coreState.accessToken,
       coreState.effects,
+      uiState.objectGridlines,
       uiState.activeElement,
       sendMaskLightUpdate,
       sendMaskObjectUpdate,
@@ -1997,6 +2019,13 @@ export default function Workspace({
       dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: patched });
       notifyMaskObjectsUpdated(maskKey, patched);
       uiDispatch({ type: UIActionType.DeleteCarouselEntry, key: maskKey, objectId });
+      if (uiState.objectGridlines.some((g) => g.key === maskKey && g.objectId === objectId)) {
+        uiDispatch({
+          type: UIActionType.SetGridlines,
+          subject: { key: maskKey, type: "object", objectId },
+          value: 0,
+        });
+      }
       deleteMaskObjectEffects(
         maskKey,
         objectId,
@@ -2032,6 +2061,7 @@ export default function Workspace({
       uiDispatch,
       uiState.activeElement,
       uiState.selectedElement,
+      uiState.objectGridlines,
       notifyMaskObjectsUpdated,
       notifyMaskSelectionChanged,
       notifyMaskSelectedObjectChanged,
@@ -2495,6 +2525,7 @@ export default function Workspace({
       notifyMaskObjectReviewPreview,
       notifyCanvasZoomChanged,
       notifyMaskObjectsUpdated,
+      maskAnimatedOffset,
     }),
     [
       notifyMaskToolChanged,
@@ -2515,6 +2546,7 @@ export default function Workspace({
       notifyMaskObjectReviewPreview,
       notifyCanvasZoomChanged,
       notifyMaskObjectsUpdated,
+      maskAnimatedOffset,
     ],
   );
 
@@ -2547,6 +2579,7 @@ export default function Workspace({
       notifyMaskObjectReviewPreview,
       notifyCanvasZoomChanged,
       notifyMaskObjectsUpdated,
+      maskAnimatedOffset,
     }),
     [
       lightMeshSection,
@@ -2576,6 +2609,7 @@ export default function Workspace({
       notifyMaskObjectReviewPreview,
       notifyCanvasZoomChanged,
       notifyMaskObjectsUpdated,
+      maskAnimatedOffset,
     ],
   );
 

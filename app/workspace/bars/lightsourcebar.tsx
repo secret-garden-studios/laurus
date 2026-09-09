@@ -2,7 +2,7 @@ import { useCallback, useContext, useMemo, useRef, useState } from "react";
 import { CoreContext, HoverContext, UIContext, MaskContext, SocketContext } from "../workspace.client";
 import { LaurusProjectMask, LaurusProjectResult, updateProject } from "@/app/projects/projects.server";
 import { CoreActionType, PendingTopologyEdit } from "../states/core-state";
-import { UIActionType } from "../states/ui-state";
+import { gridlinesValue, LaurusSelectedElement, UIActionType } from "../states/ui-state";
 import { SvgRepo, asterisk300, antigravity300 } from "@/app/svg-repo";
 import { ParameterSliderX, ParameterSliderXPlusMinus } from "@/app/components/parameter-slider";
 import { ColorPickerButton } from "../../components/color-picker";
@@ -38,12 +38,7 @@ import { resolveTargetsAt, type LightSourceTargets } from "../keyframe-writer";
 import { OBJECT_FILL_DEFAULT, toEquationObjectFill, toObjectFillEquationFields } from "../workspace.server";
 import { NEUTRAL_MASK_OBJECT_FALLOFF, OBJECT_ELEVATION_DEFAULT } from "../mask-gl";
 import { dellaRespira, italiana } from "@/app/fonts";
-
-const GRIDLINES_OPTIONS = [
-  { label: "off", value: 0 },
-  { label: "dim", value: 0.5 },
-  { label: "bright", value: 1 },
-] as const;
+import Gridlines from "./gridlines";
 
 const LIGHT_PREVIEW_SIZE_MIN = 10;
 const LIGHT_PREVIEW_SIZE_MAX = 300;
@@ -945,12 +940,14 @@ export default function LightSourcebar() {
   };
   const lightShadowTitle = lightShadowValue.toFixed(2);
   const lightShadowRef = useRef<HTMLDivElement | null>(null);
-  const lightGridlinesValue =
-    uiState.lightGridlines &&
-    uiState.lightGridlines.key === selectedLightMaskKey &&
-    uiState.lightGridlines.lightId === selectedLight?.id
-      ? uiState.lightGridlines.value
-      : 0;
+  const lightGridlinesSubject: LaurusSelectedElement | undefined =
+    selectedLightMaskKey !== undefined && selectedLight
+      ? { key: selectedLightMaskKey, type: "light", lightId: selectedLight.id }
+      : undefined;
+  const objectGridlinesSubject: LaurusSelectedElement | undefined =
+    selectedObjectMaskKey !== undefined && selectedObject
+      ? { key: selectedObjectMaskKey, type: "object", objectId: selectedObject.id }
+      : undefined;
   const isLightGreeting = !selectedLight;
   const isPreviewAvailable = !selectedLight && !selectedObject;
   const isObjectGreeting = isObjectParamDisabled;
@@ -1508,43 +1505,16 @@ export default function LightSourcebar() {
                   ...dynamicSizes.toggle.div,
                 }}
               >
-                <span
+                <Gridlines
+                  value={gridlinesValue(uiState, lightGridlinesSubject)}
+                  disabled={isBusy || !lightGridlinesSubject}
+                  onChange={(value) => {
+                    if (!lightGridlinesSubject) return;
+                    uiDispatch({ type: UIActionType.SetGridlines, subject: lightGridlinesSubject, value });
+                  }}
+                  segmentStyle={dynamicSizes.segment}
                   title="draw the mesh gridlines inside this light's own polygons -- they stay up through playback"
-                  style={{ opacity: isBusy ? 0.3 : 1, userSelect: "none" }}
-                >
-                  {"gridlines"}
-                </span>
-                <div style={{ display: "flex", alignItems: "center", letterSpacing: 2 }}>
-                  {GRIDLINES_OPTIONS.map((option) => {
-                    const isSelected = lightGridlinesValue === option.value;
-                    return (
-                      <span
-                        key={option.label}
-                        onClick={() => {
-                          if (isBusy || !selectedLight || selectedLightMaskKey === undefined) return;
-                          uiDispatch({
-                            type: UIActionType.SetLightGridlines,
-                            value:
-                              option.value === 0
-                                ? undefined
-                                : { key: selectedLightMaskKey, lightId: selectedLight.id, value: option.value },
-                          });
-                        }}
-                        style={{
-                          cursor: isBusy ? "default" : "pointer",
-                          color: isSelected ? "inherit" : "rgb(67,67,67)",
-                          opacity: isBusy ? 0.3 : 1,
-                          textShadow: isSelected ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
-                          padding: "4px 8px",
-                          userSelect: "none",
-                          ...dynamicSizes.segment,
-                        }}
-                      >
-                        {option.label}
-                      </span>
-                    );
-                  })}
-                </div>
+                />
               </div>
             </>
           )}
@@ -1729,6 +1699,26 @@ export default function LightSourcebar() {
                 return false;
               }}
               disabled={isObjectControlsDisabled}
+            />
+          </div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              height: "100%",
+              borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+              ...dynamicSizes.toggle.div,
+            }}
+          >
+            <Gridlines
+              value={gridlinesValue(uiState, objectGridlinesSubject)}
+              disabled={isBusy || !objectGridlinesSubject}
+              onChange={(value) => {
+                if (!objectGridlinesSubject) return;
+                uiDispatch({ type: UIActionType.SetGridlines, subject: objectGridlinesSubject, value });
+              }}
+              segmentStyle={dynamicSizes.segment}
+              title="draw the mesh gridlines inside this object's own polygons -- they stay up through playback"
             />
           </div>
         </>

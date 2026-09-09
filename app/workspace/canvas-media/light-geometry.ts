@@ -1,8 +1,16 @@
-import { MASK_OBJECT_COLLISION_BUFFER_PX, activeMaskObjects, objectProfileUAt, objectSwellAt } from "../mask-gl.ts";
-import type { ObjectGeometryInput } from "../mask-gl.ts";
+import {
+  MASK_OBJECT_COLLISION_BUFFER_PX,
+  activeMaskObjects,
+  invertedTransform,
+  objectProfileUAt,
+  objectSwellAt,
+} from "../mask-gl.ts";
+import type { Matrix2, ObjectGeometryInput } from "../mask-gl.ts";
 import type { LaurusLight, LaurusMaskResult, LaurusObject, LaurusPolygonPath } from "../workspace.server";
 import { cachedObjectShape } from "./object-shape.ts";
 import { centroidOf, maskGeometry, polygonIndicesForLight, polygonIndicesForObject } from "./mask-geometry.ts";
+import { frontToBackElements } from "./mask-order.ts";
+import type { StackRef, StackedElement } from "./mask-order.ts";
 
 function pointInTriangle(
   px: number,
@@ -38,7 +46,7 @@ interface MeshSwell {
   reachSquares: number[];
 }
 
-function meshSwell(objects: ObjectGeometryInput[]): MeshSwell | undefined {
+function meshSwell(objects: readonly ObjectGeometryInput[]): MeshSwell | undefined {
   const swelling = activeMaskObjects(objects);
   if (swelling.length === 0) return undefined;
   return { objects: swelling, reachSquares: swelling.map((object) => maxSwellReach(object) ** 2) };
@@ -293,55 +301,57 @@ export function litRegionCircle(
   return { cx, cy, radius };
 }
 
-export function lightIdAtPoint(
-  polygons: LaurusPolygonPath[],
-  points: [number, number][][],
-  objects: ObjectGeometryInput[],
-  point: [number, number],
-): number | undefined {
-  const [px, py] = point;
-  const swell = meshSwell(objects);
-  const orderedLightIds: number[] = [];
-  const boundsByLight = new Map<number, { minX: number; maxX: number; minY: number; maxY: number }>();
-  polygons.forEach((p, i) => {
-    if (p.light_id === 0) return;
-    const triangle = points[i];
-    if (!triangle || triangle.length === 0) return;
-    let bounds = boundsByLight.get(p.light_id);
-    if (!bounds) {
-      orderedLightIds.push(p.light_id);
-      bounds = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
-      boundsByLight.set(p.light_id, bounds);
-    }
-    for (const corner of triangle) {
-      const [x, y] = swelled(swell, corner);
-      if (x < bounds.minX) bounds.minX = x;
-      if (x > bounds.maxX) bounds.maxX = x;
-      if (y < bounds.minY) bounds.minY = y;
-      if (y > bounds.maxY) bounds.maxY = y;
-    }
-  });
-  for (const lightId of orderedLightIds) {
-    const bounds = boundsByLight.get(lightId);
-    if (!bounds) continue;
-    if (px >= bounds.minX && px <= bounds.maxX && py >= bounds.minY && py <= bounds.maxY) {
-      return lightId;
-    }
-  }
-  return undefined;
+export interface LightHitOutline {
+  id: number;
+  order: number;
+  cx: number;
+  cy: number;
+  radius: number;
+  shape: string;
+  transform?: Matrix2;
 }
 
-export function objectIdAtPoint(objects: LaurusObject[], point: [number, number]): number | undefined {
-  let bestId: number | undefined;
-  let bestReach = Infinity;
-  for (const object of objects) {
-    const shape = object.shape ? cachedObjectShape(object.shape) : undefined;
-    const geometry = { cx: object.cx, cy: object.cy, radius: object.radius, elevation: 0, falloff: 0, shape };
-    if (objectProfileUAt(geometry, point) >= 1) continue;
-    const reach = object.radius * (shape?.maxExtent ?? 1);
-    if (reach >= bestReach) continue;
-    bestId = object.id;
-    bestReach = reach;
+export interface MaskHitScene {
+  objects: readonly (ObjectGeometryInput & { id: number })[];
+  lights: readonly LightHitOutline[];
+}
+
+function lightHits(scene: MaskHitScene, point: [number, number]): StackedElement[] {
+  const hits: StackedElement[] = [];
+  for (const light of scene.lights) {
+    if (light.radius <= 0) continue;
+    const rotation = invertedTransform(light.transform);
+    if (rotation && !rotation.visible) continue;
+    const outline = {
+      cx: light.cx,
+      cy: light.cy,
+      radius: light.radius,
+      shape: cachedObjectShape(light.shape),
+      rotation,
+    };
+    if (objectProfileUAt(outline, point) >= 1) continue;
+    hits.push({ kind: "light", id: light.id, order: light.order });
   }
-  return bestId;
+  return hits;
+}
+
+function objectHits(scene: MaskHitScene, point: [number, number]): StackedElement[] {
+  const hits: StackedElement[] = [];
+  for (const object of scene.objects) {
+    if (object.radius <= 0) continue;
+    if (object.rotation && !object.rotation.visible) continue;
+    if (objectProfileUAt(object, point) >= 1) continue;
+    hits.push({ kind: "object", id: object.id, order: object.order });
+  }
+  return hits;
+}
+
+export function elementAtPoint(scene: MaskHitScene, point: [number, number]): StackRef | undefined {
+  const [front] = frontToBackElements([...objectHits(scene, point), ...lightHits(scene, point)]);
+  return front && { kind: front.kind, id: front.id };
+}
+
+export function lightIdAtPoint(scene: MaskHitScene, point: [number, number]): number | undefined {
+  const [front] = frontToBackElements(lightHits(scene, point));
+  return front?.id;
 }

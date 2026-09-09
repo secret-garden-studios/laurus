@@ -21,7 +21,9 @@ import {
   drawnMaskObjects,
   liftSourceAt,
   encodeObjectSdfAtlas,
-  objectShapeAtlasSignature,
+  encodeObjectSdfTile,
+  objectSdfTileOrigin,
+  objectShapeSlotSignature,
   objectProfileUAt,
 } from "./mask-gl.ts";
 import type { ObjectGeometryInput } from "./mask-gl.ts";
@@ -527,6 +529,23 @@ describe("encodeObjectSdfAtlas -- the tile packing", () => {
     assert.ok(decodeDistance(data, at(slot, middle, middle)) > 0);
   });
 
+  it("packs a lone tile exactly as the atlas packs that slot, which is what lets one tile upload alone", () => {
+    const shape = shapeOf([square(1)]);
+    const slot = OBJECT_SDF_GRID + 2;
+    const atlas = encodeObjectSdfAtlas([...Array(slot).fill(undefined), shape]);
+    const tile = encodeObjectSdfTile(shape);
+    const [left, top] = objectSdfTileOrigin(slot, OBJECT_SDF_GRID);
+    for (let row = 0; row < OBJECT_SDF_TILE; row += 17) {
+      for (let col = 0; col < OBJECT_SDF_TILE; col += 17) {
+        const inAtlas = ((top + row) * OBJECT_SDF_ATLAS + left + col) * 4;
+        const inTile = (row * OBJECT_SDF_TILE + col) * 4;
+        for (let channel = 0; channel < 4; channel++) {
+          assert.equal(atlas[inAtlas + channel], tile[inTile + channel], `texel ${col},${row} channel ${channel}`);
+        }
+      }
+    }
+  });
+
   it("scales a draft-resolution tile up rather than refusing it", () => {
     const built = buildObjectShapeFromRings([square(1)], 64);
     assert.ok(built.ok);
@@ -537,7 +556,7 @@ describe("encodeObjectSdfAtlas -- the tile packing", () => {
   });
 });
 
-describe("objectShapeAtlasSignature -- what makes the atlas upload again", () => {
+describe("objectShapeSlotSignature -- what makes a slot upload again", () => {
   const rings = (half: number): [number, number][][] => [
     [
       [-half, -half],
@@ -553,8 +572,8 @@ describe("objectShapeAtlasSignature -- what makes the atlas upload again", () =>
     return built.shape;
   };
 
-  it("holds still for the same shapes, so an unchanged frame costs no upload", () => {
-    assert.equal(objectShapeAtlasSignature([shapeOf(1)]), objectShapeAtlasSignature([shapeOf(1)]));
+  it("holds still for the same shape, so an unchanged frame costs no upload", () => {
+    assert.equal(objectShapeSlotSignature(shapeOf(1)), objectShapeSlotSignature(shapeOf(1)));
   });
 
   it("separates the draft a drag leaves behind from the shape committed after it", () => {
@@ -562,8 +581,8 @@ describe("objectShapeAtlasSignature -- what makes the atlas upload again", () =>
     const committed = shapeOf(1);
     assert.equal(draft.path, committed.path, "the commit re-renders the very same rings");
     assert.notEqual(
-      objectShapeAtlasSignature([draft]),
-      objectShapeAtlasSignature([committed]),
+      objectShapeSlotSignature(draft),
+      objectShapeSlotSignature(committed),
       "the full-resolution field has to reach the atlas, or the edge stays stair-stepped",
     );
   });
@@ -578,13 +597,11 @@ describe("objectShapeAtlasSignature -- what makes the atlas upload again", () =>
       ],
     ]);
     assert.ok(wide.ok);
-    assert.notEqual(objectShapeAtlasSignature([shapeOf(1)]), objectShapeAtlasSignature([wide.shape]));
+    assert.notEqual(objectShapeSlotSignature(shapeOf(1)), objectShapeSlotSignature(wide.shape));
   });
 
-  it("keeps a circle slot distinct from a shaped one, and tracks its position", () => {
-    const shape = shapeOf(1);
-    assert.notEqual(objectShapeAtlasSignature([undefined]), objectShapeAtlasSignature([shape]));
-    assert.notEqual(objectShapeAtlasSignature([shape, undefined]), objectShapeAtlasSignature([undefined, shape]));
+  it("keeps a circle slot distinct from a shaped one", () => {
+    assert.notEqual(objectShapeSlotSignature(undefined), objectShapeSlotSignature(shapeOf(1)));
   });
 });
 

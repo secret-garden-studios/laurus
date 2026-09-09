@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   EDITABLE_MAX_ANCHORS,
   cubicRingsToPathData,
@@ -18,6 +18,13 @@ import {
   type RingPlace,
 } from "./object-path.ts";
 import { polygonArea } from "./object-shape.ts";
+import { placedShapeMap, restingShapeMap, type Matrix2, type PlacedShape } from "../mask-gl";
+import {
+  HIGHLIGHT_SHADOW_BLUR_PX,
+  HIGHLIGHT_SHADOW_COLOR,
+  HIGHLIGHT_SHADOW_OFFSET_PX,
+  highlightCss,
+} from "../mask-constants";
 import { Z_INDEX } from "../workspace.config";
 
 const ANCHOR_RADIUS_PX = 4.5;
@@ -28,21 +35,27 @@ const LEASH_WIDTH_PX = 1;
 const GRAB_RADIUS_PX = 9;
 const ZOOM_COMPENSATION = 0.85;
 const COLLAPSED_AREA = 1e-3;
+const EDGE_ON_DETERMINANT = 1e-4;
 const ANCHOR_LIMIT_REACHED = "anchor limit reached!";
 const BUFFER_SPACE = { cx: 0, cy: 0, radius: 1 };
 
-const outlineColor = (bright: boolean) => `rgba(66, 133, 244, ${bright ? 1 : 0.5})`;
-const referenceColor = (bright: boolean) => `rgba(251, 166, 39, ${bright ? 1 : 0.5})`;
+const shapePathAlpha = (gridlines: number) => (gridlines >= 1 ? 1 : 0.5);
+const shapePathColor = (gridlines: number) => `rgba(255, 255, 255, ${shapePathAlpha(gridlines)})`;
+const shapePathDiffColor = (gridlines: number) => `rgba(251, 166, 39, ${shapePathAlpha(gridlines)})`;
 
 const HOLE_COLOR = "rgba(66, 133, 244, 0.5)";
 const INVALID_COLOR = "rgb(211, 71, 71)";
 const ANCHOR_FILL = "rgb(255, 255, 255)";
 const CONTROL_FILL = "rgb(32, 32, 32)";
-const SELECTED_FILL = "rgb(66, 133, 244)";
+const SELECTED_ANCHOR_FILL = "rgb(66, 133, 244)";
 const GHOST_FILL = "rgba(66, 133, 244, 0.65)";
 const PICK_FILL = "rgba(66, 133, 244, 0.12)";
 const PICK_HOVER_FILL = "rgba(66, 133, 244, 0.34)";
 const PREVIEW_COLOR = "rgb(255, 255, 255)";
+
+function determinant2(matrix: Matrix2 | undefined): number {
+  return matrix ? matrix[0] * matrix[3] - matrix[1] * matrix[2] : 1;
+}
 
 function screenPxUnit(bufferWidth: number, cssWidth: number, canvasZoom: number): number {
   const perBufferUnit = cssWidth > 0 ? bufferWidth / cssWidth : 1;
@@ -51,7 +64,7 @@ function screenPxUnit(bufferWidth: number, cssWidth: number, canvasZoom: number)
 
 export interface ShapeOutline {
   id: number | string;
-  region: { cx: number; cy: number; radius: number; shape: string };
+  region: { cx: number; cy: number; radius: number; shape: string; transform?: Matrix2 };
   color: string;
 }
 
@@ -72,9 +85,14 @@ export function ShapeOutlines({
   cssHeight,
   canvasZoom,
 }: ShapeOutlinesProps) {
-  const drawable = outlines.filter(({ region }) => region.shape && region.radius > 0);
+  const shadowId = `highlight-shadow-${useId().replace(/:/g, "")}`;
+  const drawable = outlines.filter(
+    ({ region }) =>
+      region.shape && region.radius > 0 && Math.abs(determinant2(region.transform)) >= EDGE_ON_DETERMINANT,
+  );
   if (drawable.length === 0) return null;
-  const stroke = OUTLINE_WIDTH_PX * screenPxUnit(bufferWidth, cssWidth, canvasZoom);
+  const unit = screenPxUnit(bufferWidth, cssWidth, canvasZoom);
+  const stroke = OUTLINE_WIDTH_PX * unit;
   return (
     <svg
       width={cssWidth}
@@ -90,16 +108,34 @@ export function ShapeOutlines({
         overflow: "visible",
       }}
     >
-      {drawable.map(({ id, region, color }) => (
-        <path
-          key={id}
-          d={region.shape}
-          transform={`translate(${region.cx} ${region.cy}) scale(${region.radius})`}
-          fill="none"
-          stroke={color}
-          strokeWidth={stroke / region.radius}
-        />
-      ))}
+      <defs>
+        <filter id={shadowId} x="-50%" y="-50%" width="200%" height="200%">
+          <feDropShadow
+            dx={HIGHLIGHT_SHADOW_OFFSET_PX[0] * unit}
+            dy={HIGHLIGHT_SHADOW_OFFSET_PX[1] * unit}
+            stdDeviation={HIGHLIGHT_SHADOW_BLUR_PX * unit}
+            floodColor={highlightCss(HIGHLIGHT_SHADOW_COLOR)}
+          />
+        </filter>
+      </defs>
+      <g filter={`url(#${shadowId})`}>
+        {drawable.map(({ id, region, color }) => {
+          const spread = Math.sqrt(Math.abs(determinant2(region.transform)));
+          const shaped = region.transform
+            ? ` matrix(${region.transform[0]} ${region.transform[2]} ${region.transform[1]} ${region.transform[3]} 0 0)`
+            : "";
+          return (
+            <path
+              key={id}
+              d={region.shape}
+              transform={`translate(${region.cx} ${region.cy})${shaped} scale(${region.radius})`}
+              fill="none"
+              stroke={color}
+              strokeWidth={stroke / (region.radius * spread)}
+            />
+          );
+        })}
+      </g>
     </svg>
   );
 }
@@ -195,6 +231,7 @@ interface Grab {
 
 export interface ObjectShapeEditorProps {
   object: { cx: number; cy: number; radius: number; shape: string };
+  place?: PlacedShape;
   bufferWidth: number;
   bufferHeight: number;
   cssWidth: number;
@@ -205,7 +242,7 @@ export interface ObjectShapeEditorProps {
   stitch: boolean;
   addAnchor: boolean;
   showAnchors: boolean;
-  gridlinesBright: boolean;
+  gridlines: number;
   reference?: { cx: number; cy: number; radius: number; shape: string };
 }
 
@@ -218,6 +255,7 @@ export interface ShapeEdit {
 
 export default function ObjectShapeEditor({
   object,
+  place,
   bufferWidth,
   bufferHeight,
   cssWidth,
@@ -228,14 +266,21 @@ export default function ObjectShapeEditor({
   stitch,
   addAnchor,
   showAnchors,
-  gridlinesBright,
+  gridlines,
   reference,
 }: ObjectShapeEditorProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const grabRef = useRef<Grab | undefined>(undefined);
 
+  const placed =
+    place && place.radius > 0 && object.radius > 0 && Math.abs(determinant2(place.transform)) >= EDGE_ON_DETERMINANT
+      ? place
+      : undefined;
+  const drawn: PlacedShape = placed ?? { cx: object.cx, cy: object.cy, radius: object.radius, transform: undefined };
+
   const [rings, setRings] = useState<CubicRing[]>(() => {
-    const out = (n: Point): Point => [object.cx + n[0] * object.radius, object.cy + n[1] * object.radius];
+    const placeAt = placedShapeMap(drawn);
+    const out = (n: Point): Point => placeAt(n[0], n[1]);
     return editableRings(object.shape).map((ring) =>
       ring.map((anchor) => ({
         point: out(anchor.point),
@@ -282,18 +327,39 @@ export default function ObjectShapeEditor({
     const widest = Math.max(0, ...flat.map((ring) => Math.abs(polygonArea(ring))));
     const { depth, pieces } = ringPieces(flat);
     return {
-      invalid: widest < COLLAPSED_AREA * object.radius * object.radius,
+      invalid: widest < COLLAPSED_AREA * drawn.radius * drawn.radius,
       holes: depth.map((enclosing) => enclosing % 2 === 1),
       pieces,
     };
-  }, [rings, object.radius]);
+  }, [rings, drawn.radius]);
+
+  const toRest = useMemo(() => {
+    if (!placed) return undefined;
+    const rest = restingShapeMap(placed, object);
+    return (p: Point): Point => rest(p[0], p[1]);
+  }, [placed, object]);
+
+  const edited = useCallback(
+    (next: CubicRing[]) => {
+      if (!toRest) return normalizeEditedRings(next, BUFFER_SPACE);
+      const rest = next.map((ring) =>
+        ring.map((anchor) => ({
+          point: toRest(anchor.point),
+          inControl: toRest(anchor.inControl),
+          outControl: toRest(anchor.outControl),
+        })),
+      );
+      return normalizeEditedRings(rest, BUFFER_SPACE);
+    },
+    [toRest],
+  );
 
   const preview = useCallback(
     (next: CubicRing[]) => {
-      const edit = normalizeEditedRings(next, BUFFER_SPACE);
+      const edit = edited(next);
       if (edit) onPreview(edit);
     },
-    [onPreview],
+    [edited, onPreview],
   );
 
   const flushGrab = useCallback(
@@ -352,7 +418,7 @@ export default function ObjectShapeEditor({
     const next = stitchRing(ringsRef.current, ring, selected.anchor, anchor);
     if (!next) return;
     applyRings(next);
-    const edit = normalizeEditedRings(next, BUFFER_SPACE);
+    const edit = edited(next);
     if (edit) onCommit(edit);
   };
 
@@ -363,7 +429,7 @@ export default function ObjectShapeEditor({
     setHoveredPiece(undefined);
     setSelected(undefined);
     applyRings(next);
-    const edit = normalizeEditedRings(next, BUFFER_SPACE);
+    const edit = edited(next);
     if (edit) onCommit(edit);
   };
 
@@ -389,7 +455,7 @@ export default function ObjectShapeEditor({
     setGhost(undefined);
     setSelected(undefined);
     applyRings(next);
-    const edit = normalizeEditedRings(next, BUFFER_SPACE);
+    const edit = edited(next);
     if (edit) onCommit(edit);
   };
 
@@ -423,13 +489,23 @@ export default function ObjectShapeEditor({
     grabRef.current = undefined;
     event.stopPropagation();
     if (!grab.moved) return;
-    const edit = normalizeEditedRings(ringsRef.current, BUFFER_SPACE);
+    const edit = edited(ringsRef.current);
     if (edit) onCommit(edit);
   };
 
   const ghostIsRefused = ghost !== undefined && (rings[ghost.ring]?.length ?? 0) >= EDITABLE_MAX_ANCHORS;
 
-  const stroke = invalid ? INVALID_COLOR : outlineColor(gridlinesBright);
+  const stroke = invalid ? INVALID_COLOR : shapePathColor(gridlines);
+  const placement = placed
+    ? `translate(${placed.cx} ${placed.cy})` +
+      (placed.transform
+        ? ` matrix(${placed.transform[0]} ${placed.transform[2]} ${placed.transform[1]} ${placed.transform[3]} 0 0)`
+        : "") +
+      ` scale(${placed.radius / object.radius}) translate(${-object.cx} ${-object.cy}) `
+    : "";
+  const placedSpread = placed
+    ? (placed.radius / object.radius) * Math.sqrt(Math.abs(determinant2(placed.transform)))
+    : 1;
 
   return (
     <svg
@@ -454,10 +530,10 @@ export default function ObjectShapeEditor({
       {reference && reference.shape && reference.radius > 0 && (
         <path
           d={reference.shape}
-          transform={`translate(${reference.cx} ${reference.cy}) scale(${reference.radius})`}
+          transform={`${placement}translate(${reference.cx} ${reference.cy}) scale(${reference.radius})`}
           fill="none"
-          stroke={referenceColor(gridlinesBright)}
-          strokeWidth={px(OUTLINE_WIDTH_PX) / reference.radius}
+          stroke={shapePathDiffColor(gridlines)}
+          strokeWidth={px(OUTLINE_WIDTH_PX) / (reference.radius * placedSpread)}
           pointerEvents="none"
         />
       )}
@@ -610,7 +686,7 @@ export default function ObjectShapeEditor({
                   cx={point[0]}
                   cy={point[1]}
                   r={px(isSelected ? SELECTED_RADIUS_PX : ANCHOR_RADIUS_PX)}
-                  fill={isSelected ? SELECTED_FILL : ANCHOR_FILL}
+                  fill={isSelected ? SELECTED_ANCHOR_FILL : ANCHOR_FILL}
                   stroke={isSelected ? ANCHOR_FILL : stroke}
                   strokeWidth={px(LEASH_WIDTH_PX)}
                   pointerEvents="none"
