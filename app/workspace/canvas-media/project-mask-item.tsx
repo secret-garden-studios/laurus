@@ -544,24 +544,32 @@ export function ProjectMaskItem({
     [mediaKey],
   );
 
+  const previewedLightAppearance = useCallback(
+    (lightId: number, base: { spread: number; intensity: number; shadow: number }) => {
+      const preview = keyframePreviewRef.current;
+      if (!preview || preview.subject !== "light" || preview.id !== lightId) return base;
+      return {
+        spread: preview.light_spread ?? base.spread,
+        intensity: preview.light_intensity ?? base.intensity,
+        shadow: preview.light_shadow ?? base.shadow,
+      };
+    },
+    [],
+  );
+
   const resolveRestingLightSources = useCallback((): MaskLightSource[] => {
     const canvas = canvasRef.current;
     if (!canvas) return [];
     const centroids = maskGeometryRef.current.centroids;
     const lights: MaskLightSource[] = [];
-    const preview = keyframePreviewRef.current;
-    const previewLightId = preview?.subject === "light" ? preview.id : undefined;
     lightsRef.current.forEach((indices, lightId) => {
-      if (playbackLightSourcesRef.current.has(lightId) && lightId !== previewLightId) return;
+      if (playbackLightSourcesRef.current.has(lightId)) return;
       const meta = lightsMetaRef.current.get(lightId);
       if (!meta) return;
 
       const shaped = resolveLightSilhouette(lightId);
-      const previewed = lightId === previewLightId ? preview : undefined;
       const appearance = {
-        spread: previewed?.light_spread ?? meta.spread,
-        intensity: previewed?.light_intensity ?? meta.intensity,
-        shadow: previewed?.light_shadow ?? meta.shadow,
+        ...previewedLightAppearance(lightId, { spread: meta.spread, intensity: meta.intensity, shadow: meta.shadow }),
         cast: meta.cast,
         order: meta.order,
         gridlines: lightGridlinesMix(lightId),
@@ -590,7 +598,7 @@ export function ProjectMaskItem({
       });
     });
     return lights;
-  }, [resolveLightSilhouette, lightGridlinesMix, lightLowpoly]);
+  }, [resolveLightSilhouette, lightGridlinesMix, lightLowpoly, previewedLightAppearance]);
 
   const dragDisabled = useMemo(() => {
     return source.kind === "live" || uiState.tool.type != "move";
@@ -818,6 +826,7 @@ export function ProjectMaskItem({
       ...(wiredMoveRef.current
         ? Array.from(playbackLightSourcesRef.current.entries()).map(([lightId, light]) => ({
             ...light,
+            ...previewedLightAppearance(lightId, light),
             gridlines: lightGridlinesMix(lightId),
             lowpoly: lightLowpoly(lightId, light.lowpoly ?? false),
           }))
@@ -843,7 +852,7 @@ export function ProjectMaskItem({
       backingVertexCount: backingVertexCountRef.current,
       backingGrey: backingGreyRef.current,
     });
-  }, [resolveObjectUniforms, resolveRestingLightSources, lightGridlinesMix, lightLowpoly]);
+  }, [resolveObjectUniforms, resolveRestingLightSources, lightGridlinesMix, lightLowpoly, previewedLightAppearance]);
   renderRef.current = render;
 
   const recolorHighlight = useCallback(() => {
