@@ -264,13 +264,11 @@ function resolveAnimationScope(coreState: CoreState) {
     (e) => !e.value.disabled && !coreState.effectGroups.get(e.value.effect_group_id)?.disabled,
   );
   const eligibleItems = new Set<string>();
-  let globalLimit = 0;
   let timelineLimit = 0;
   enabledEffects.forEach((e) => {
     e.value.math.forEach((_, inputKey) => {
       if (coreState.project.imgs.has(inputKey) || coreState.project.svgs.has(inputKey)) {
         eligibleItems.add(inputKey);
-        globalLimit = Math.max(globalLimit, e.value.end);
         timelineLimit = Math.max(timelineLimit, e.value.end);
       } else if (
         (e.type === "move" ||
@@ -282,16 +280,10 @@ function resolveAnimationScope(coreState: CoreState) {
       ) {
         eligibleItems.add(inputKey);
         timelineLimit = Math.max(timelineLimit, e.value.end);
-        if (
-          parseMaskLightInputId(inputKey).lightId === undefined &&
-          parseMaskObjectInputId(inputKey).objectId === undefined
-        ) {
-          globalLimit = Math.max(globalLimit, e.value.end);
-        }
       }
     });
   });
-  return { eligibleItems, globalLimit, timelineLimit };
+  return { eligibleItems, timelineLimit };
 }
 
 export interface CoreContextProps {
@@ -1233,12 +1225,8 @@ export default function Workspace({
       frameDownloadAbortControllerRef.current = abortController;
       try {
         document.body.style.cursor = "progress";
-        const { eligibleItems, globalLimit } = resolveAnimationScope(coreState);
-        const animationOptions: KeyframeAnimationOptions = {
-          duration: globalLimit * 1000,
-          iterations: 1,
-          fill,
-        };
+        const { eligibleItems } = resolveAnimationScope(coreState);
+        const fps = coreState.project.fps > 0 ? coreState.project.fps : 30;
         const total = eligibleItems.size;
         const newAnimations: Animation[] = [];
         let renderedInputs = 0;
@@ -1284,7 +1272,11 @@ export default function Workspace({
               laurusFrames.reverse();
             }
             const keyframes: Keyframe[] = toKeyframes(laurusFrames, false);
-            const keyframeEffect = new KeyframeEffect(element, keyframes, animationOptions);
+            const keyframeEffect = new KeyframeEffect(element, keyframes, {
+              duration: (Math.max(laurusFrames.length - 1, 0) / fps) * 1000,
+              iterations: 1,
+              fill,
+            });
             const animation = new Animation(keyframeEffect, document.timeline);
             newAnimations.push(animation);
           }

@@ -1414,16 +1414,12 @@ export function ProjectMaskItem({
       let durationSeconds: number;
       let ready: Promise<void>;
 
-      const fetchFramesCached = (
-        inputId: string,
-        cacheKey: string,
-        fetcher: () => Promise<LaurusFrame[] | undefined>,
-      ): Promise<LaurusFrame[] | undefined> => {
+      const fetchMergedFramesCached = (inputId: string): Promise<LaurusFrame[] | undefined> => {
         const stale = coreState.inputsToRender.has("*") || coreState.inputsToRender.has(inputId);
-        const cached = !stale ? framesCacheRef?.current?.get(cacheKey) : undefined;
+        const cached = !stale ? framesCacheRef?.current?.get(inputId) : undefined;
         if (cached) return Promise.resolve(cached);
-        return fetcher().then((result) => {
-          if (result && framesCacheRef?.current) framesCacheRef.current.set(cacheKey, [...result]);
+        return getFrames(coreState.apiOrigin, coreState.project.project_id, inputId, fps).then((result) => {
+          if (result && framesCacheRef?.current) framesCacheRef.current.set(inputId, [...result]);
           return result;
         });
       };
@@ -1434,17 +1430,13 @@ export function ProjectMaskItem({
         durationSeconds = 0;
         ready = Promise.all([
           ...targets.map((t) =>
-            fetchFramesCached(t.inputId, t.inputId, () =>
-              getFrames(coreState.apiOrigin, coreState.project.project_id, t.inputId, fps),
-            ).then((result) => {
+            fetchMergedFramesCached(t.inputId).then((result) => {
               if (activePlaybackRef.current !== session) return;
               mergedFramesByLight.set(t.lightId, result ?? []);
             }),
           ),
           ...objectTargets.map((t) =>
-            fetchFramesCached(t.inputId, t.inputId, () =>
-              getFrames(coreState.apiOrigin, coreState.project.project_id, t.inputId, fps),
-            ).then((result) => {
+            fetchMergedFramesCached(t.inputId).then((result) => {
               if (activePlaybackRef.current !== session) return;
               mergedFramesByObject.set(t.objectId, result ?? []);
             }),
@@ -1472,9 +1464,7 @@ export function ProjectMaskItem({
         if (objectTarget.wiredMove) {
           const wiredMove = objectTarget.wiredMove;
           objectFetches.push(
-            fetchFramesCached(objectTarget.inputId, `move:${objectTarget.inputId}`, () =>
-              getMoveFrames(coreState.apiOrigin, wiredMove.key, objectTarget.inputId),
-            ).then((result) => {
+            getMoveFrames(coreState.apiOrigin, wiredMove.key, objectTarget.inputId).then((result) => {
               if (activePlaybackRef.current === session && result)
                 moveFramesByObject.set(objectTarget.objectId, result);
             }),
@@ -1483,9 +1473,7 @@ export function ProjectMaskItem({
         if (objectTarget.wiredLightSource) {
           const wiredLightSource = objectTarget.wiredLightSource;
           objectFetches.push(
-            fetchFramesCached(objectTarget.inputId, `light_source:${objectTarget.inputId}`, () =>
-              getLightSourceFrames(coreState.apiOrigin, wiredLightSource.key, objectTarget.inputId),
-            ).then((result) => {
+            getLightSourceFrames(coreState.apiOrigin, wiredLightSource.key, objectTarget.inputId).then((result) => {
               if (activePlaybackRef.current === session && result)
                 lightSourceFramesByObject.set(objectTarget.objectId, result);
             }),
@@ -1494,9 +1482,7 @@ export function ProjectMaskItem({
         if (objectTarget.wiredScale) {
           const wiredScale = objectTarget.wiredScale;
           objectFetches.push(
-            fetchFramesCached(objectTarget.inputId, `scale:${objectTarget.inputId}`, () =>
-              getScaleFrames(coreState.apiOrigin, wiredScale.key, objectTarget.inputId),
-            ).then((result) => {
+            getScaleFrames(coreState.apiOrigin, wiredScale.key, objectTarget.inputId).then((result) => {
               if (activePlaybackRef.current === session && result)
                 scaleFramesByObject.set(objectTarget.objectId, result);
             }),
@@ -1505,9 +1491,7 @@ export function ProjectMaskItem({
         if (objectTarget.wiredRotate) {
           const wiredRotate = objectTarget.wiredRotate;
           objectFetches.push(
-            fetchFramesCached(objectTarget.inputId, `rotate:${objectTarget.inputId}`, () =>
-              getRotateFrames(coreState.apiOrigin, wiredRotate.key, objectTarget.inputId),
-            ).then((result) => {
+            getRotateFrames(coreState.apiOrigin, wiredRotate.key, objectTarget.inputId).then((result) => {
               if (activePlaybackRef.current === session && result)
                 rotateFramesByObject.set(objectTarget.objectId, result);
             }),
@@ -1516,9 +1500,7 @@ export function ProjectMaskItem({
         if (objectTarget.wiredSkew) {
           const wiredSkew = objectTarget.wiredSkew;
           objectFetches.push(
-            fetchFramesCached(objectTarget.inputId, `skew:${objectTarget.inputId}`, () =>
-              getSkewFrames(coreState.apiOrigin, wiredSkew.key, objectTarget.inputId),
-            ).then((result) => {
+            getSkewFrames(coreState.apiOrigin, wiredSkew.key, objectTarget.inputId).then((result) => {
               if (activePlaybackRef.current === session && result)
                 skewFramesByObject.set(objectTarget.objectId, result);
             }),
@@ -1536,9 +1518,7 @@ export function ProjectMaskItem({
         if (target.wiredMove) {
           const wiredMove = target.wiredMove;
           fetches.push(
-            fetchFramesCached(target.inputId, `move:${target.inputId}`, () =>
-              getMoveFrames(coreState.apiOrigin, wiredMove.key, target.inputId),
-            ).then((result) => {
+            getMoveFrames(coreState.apiOrigin, wiredMove.key, target.inputId).then((result) => {
               if (activePlaybackRef.current === session && result) moveFramesByLight.set(target.lightId, result);
             }),
           );
@@ -1546,9 +1526,7 @@ export function ProjectMaskItem({
         if (target.wiredLightSource) {
           const wiredLightSource = target.wiredLightSource;
           fetches.push(
-            fetchFramesCached(target.inputId, `light_source:${target.inputId}`, () =>
-              getLightSourceFrames(coreState.apiOrigin, wiredLightSource.key, target.inputId),
-            ).then((result) => {
+            getLightSourceFrames(coreState.apiOrigin, wiredLightSource.key, target.inputId).then((result) => {
               if (activePlaybackRef.current === session && result) lightSourceFramesByLight.set(target.lightId, result);
             }),
           );
@@ -1556,9 +1534,7 @@ export function ProjectMaskItem({
         if (target.wiredScale) {
           const wiredScale = target.wiredScale;
           fetches.push(
-            fetchFramesCached(target.inputId, `scale:${target.inputId}`, () =>
-              getScaleFrames(coreState.apiOrigin, wiredScale.key, target.inputId),
-            ).then((result) => {
+            getScaleFrames(coreState.apiOrigin, wiredScale.key, target.inputId).then((result) => {
               if (activePlaybackRef.current === session && result) scaleFramesByLight.set(target.lightId, result);
             }),
           );
@@ -1566,9 +1542,7 @@ export function ProjectMaskItem({
         if (target.wiredSkew) {
           const wiredSkew = target.wiredSkew;
           fetches.push(
-            fetchFramesCached(target.inputId, `skew:${target.inputId}`, () =>
-              getSkewFrames(coreState.apiOrigin, wiredSkew.key, target.inputId),
-            ).then((result) => {
+            getSkewFrames(coreState.apiOrigin, wiredSkew.key, target.inputId).then((result) => {
               if (activePlaybackRef.current === session && result) skewFramesByLight.set(target.lightId, result);
             }),
           );
