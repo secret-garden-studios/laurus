@@ -46,3 +46,17 @@ export function meshCircleToCanvas(space: MaskSpace, circle: ProjectCircle): Pro
     radius: circle.radius / space.meshPerCanvasX,
   };
 }
+
+export function clampFrameToCanvas(
+  frame: { x: number; y: number; width: number; height: number },
+  canvas_width: number,
+  canvas_height: number,
+): { x: number; y: number; width: number; height: number } {
+  if (frame.width < 0 || frame.height < 0) return frame;
+  if (frame.width > canvas_width || frame.height > canvas_height) return frame;
+  return {
+    ...frame,
+    x: Math.min(Math.max(frame.x, 0), canvas_width - frame.width),
+    y: Math.min(Math.max(frame.y, 0), canvas_height - frame.height),
+  };
+}

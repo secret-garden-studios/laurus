@@ -15,7 +15,7 @@ import { CoreActionType } from "./states/core-state";
 import { ProjectMaskItem, ProjectMaskItemSource } from "./canvas-media/project-mask-item";
 import { indicesInCircleFromCentroids } from "./canvas-media/light-geometry";
 import { maskGeometry } from "./canvas-media/mask-geometry";
-import { ProjectCircle, canvasCircleToMesh, maskSpace } from "./canvas-media/canvas-space";
+import { ProjectCircle, canvasCircleToMesh, clampFrameToCanvas, maskSpace } from "./canvas-media/canvas-space";
 import { warmImageTexture } from "./mask-gl";
 import { useMaskPersist } from "./hooks/useMaskPersist";
 import { Z_INDEX } from "./workspace.config";
@@ -314,7 +314,11 @@ export default function Canvas() {
 
   const handleSvgDrop = useCallback(
     async (svgData: LaurusSvgResult, dropArea: ProjectCircle) => {
-      const newFrame = calculateDropFrame(svgData.width, svgData.height, dropArea, copy);
+      const newFrame = clampFrameToCanvas(
+        calculateDropFrame(svgData.width, svgData.height, dropArea, copy),
+        coreState.project.canvas_width,
+        coreState.project.canvas_height,
+      );
       if (isBadFrame(newFrame, coreState.project.canvas_width, coreState.project.canvas_height)) {
         return;
       }
@@ -416,7 +420,11 @@ export default function Canvas() {
 
   const handleImgDrop = useCallback(
     async (imgData: LaurusImgResult, dropArea: ProjectCircle) => {
-      const newFrame = calculateDropFrame(imgData.width, imgData.height, dropArea, copy);
+      const newFrame = clampFrameToCanvas(
+        calculateDropFrame(imgData.width, imgData.height, dropArea, copy),
+        coreState.project.canvas_width,
+        coreState.project.canvas_height,
+      );
       if (isBadFrame(newFrame, coreState.project.canvas_width, coreState.project.canvas_height)) {
         return;
       }
@@ -519,7 +527,19 @@ export default function Canvas() {
 
   const handleMaskDrop = useCallback(
     (imgData: LaurusImgResult, dropArea: ProjectCircle) => {
-      const newFrame = calculateDropFrame(imgData.width, imgData.height, dropArea, copy);
+      const fitted = calculateDropFrame(imgData.width, imgData.height, dropArea, copy);
+      const width = copy?.size.value && copy.size.width !== undefined ? copy.size.width : fitted.width;
+      const height = copy?.size.value && copy.size.height !== undefined ? copy.size.height : fitted.height;
+      const newFrame = clampFrameToCanvas(
+        {
+          x: copy?.position.value && copy.position.x !== undefined ? copy.position.x : dropArea.cx - width / 2,
+          y: copy?.position.value && copy.position.y !== undefined ? copy.position.y : dropArea.cy - height / 2,
+          width,
+          height,
+        },
+        coreState.project.canvas_width,
+        coreState.project.canvas_height,
+      );
       if (isBadFrame(newFrame, coreState.project.canvas_width, coreState.project.canvas_height)) {
         return;
       }
@@ -635,10 +655,16 @@ export default function Canvas() {
         if (copy.position.y !== undefined) originY = copy.position.y;
       }
 
-      const groupFrame = { x: originX, y: originY, width: groupWidth * scale, height: groupHeight * scale };
+      const groupFrame = clampFrameToCanvas(
+        { x: originX, y: originY, width: groupWidth * scale, height: groupHeight * scale },
+        coreState.project.canvas_width,
+        coreState.project.canvas_height,
+      );
       if (isBadFrame(groupFrame, coreState.project.canvas_width, coreState.project.canvas_height)) {
         return;
       }
+      originX = groupFrame.x;
+      originY = groupFrame.y;
       const placed = (meta: LaurusProjectImg | LaurusProjectSvg) => ({
         left: Math.round(originX + (meta.left - minX) * scale),
         top: Math.round(originY + (meta.top - minY) * scale),
