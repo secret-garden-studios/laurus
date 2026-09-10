@@ -2,13 +2,9 @@ import { useContext, useState } from "react";
 import { UIContext } from "../workspace.client";
 import { inkPen300, SvgRepo } from "@/app/svg-repo";
 import Toggle from "@/app/components/toggle";
-import { UIActionType } from "../states/ui-state";
+import { gridlinesValue, maskEditSubject, UIActionType } from "../states/ui-state";
 import { useObjectReview } from "../hooks/useObjectReview";
-
-const GRIDLINES_OPTIONS = [
-  { label: "dim", value: false },
-  { label: "bright", value: true },
-] as const;
+import Gridlines, { GRIDLINES_LEVEL_OPTIONS } from "./gridlines";
 
 export default function Penbar() {
   const { uiState, uiDispatch } = useContext(UIContext);
@@ -56,6 +52,7 @@ export default function Penbar() {
   const isAddAnchorOn = uiState.tool.type === "pen" && uiState.tool.addAnchor;
   const showAnchors = uiState.tool.type !== "pen" || uiState.tool.showAnchors;
   const handlesUp = session !== undefined && session.editingShape;
+  const gridlinesSubject = session && maskEditSubject(session);
 
   if (!session) {
     return (
@@ -211,34 +208,20 @@ export default function Penbar() {
           display: "flex",
           alignItems: "center",
           height: "100%",
-          opacity: handlesUp ? 1 : 0.4,
           ...dynamicSizes.toggle.div,
         }}
       >
-        <span>{"gridlines"}</span>
-        <div style={{ display: "flex", alignItems: "center", letterSpacing: 2 }}>
-          {GRIDLINES_OPTIONS.map((option) => {
-            const isSelected = uiState.gridlinesBright === option.value;
-            return (
-              <span
-                key={option.label}
-                onClick={() => {
-                  if (!handlesUp) return;
-                  uiDispatch({ type: UIActionType.SetGridlinesBright, value: option.value });
-                }}
-                style={{
-                  cursor: !handlesUp ? "" : "pointer",
-                  color: !handlesUp ? "rgb(67,67,67)" : isSelected ? "inherit" : "rgb(67,67,67)",
-                  textShadow: isSelected ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
-                  padding: "4px 8px",
-                  ...dynamicSizes.segment,
-                }}
-              >
-                {option.label}
-              </span>
-            );
-          })}
-        </div>
+        <Gridlines
+          value={gridlinesValue(uiState, gridlinesSubject)}
+          disabled={!gridlinesSubject}
+          onChange={(value) => {
+            if (!gridlinesSubject) return;
+            uiDispatch({ type: UIActionType.SetGridlines, subject: gridlinesSubject, value });
+          }}
+          segmentStyle={dynamicSizes.segment}
+          options={GRIDLINES_LEVEL_OPTIONS}
+          title="draw the mesh gridlines inside the region being edited -- the same toggle the light source bar carries"
+        />
       </div>
     </div>
   );

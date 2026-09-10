@@ -4,7 +4,6 @@ import { clipToConvex, clipTriangle, insideRings, polygonArea2, shapeOutline, ty
 
 const UNIT: { cx: number; cy: number; radius: number } = { cx: 0, cy: 0, radius: 1 };
 const SQUARE = "M-1,-1L1,-1L1,1L-1,1Z";
-// a disc with a bite out of the +x side
 const CRESCENT = "M0,-1L0.6,-0.8L0.25,-0.45L0.1,0L0.25,0.45L0.6,0.8L0,1L-0.71,0.71L-1,0L-0.71,-0.71Z";
 const ANNULUS = "M-1,-1L1,-1L1,1L-1,1ZM-0.4,-0.4L0.4,-0.4L0.4,0.4L-0.4,0.4Z";
 
@@ -12,7 +11,6 @@ function tri(a: Point, b: Point, c: Point): Point[] {
   return [a, b, c];
 }
 
-/** Share of a triangle's area that lies inside the rings, by dense sampling. */
 function insideFraction(triangle: Point[], rings: Point[][], steps = 40): number {
   let inside = 0;
   let total = 0;
@@ -69,7 +67,6 @@ describe("clipToConvex -- Sutherland-Hodgman with the triangle as the clip", () 
       [5, 8],
     ];
     const clipped = clipToConvex(straddling, square);
-    // half of a 10x3 rectangle survives
     assert.ok(Math.abs(Math.abs(polygonArea2(clipped)) - 15) < 1e-6, `${Math.abs(polygonArea2(clipped))}`);
     for (const [x] of clipped) assert.ok(x <= 10 + 1e-9, `${x} escaped the clip`);
   });
@@ -87,8 +84,6 @@ describe("clipToConvex -- Sutherland-Hodgman with the triangle as the clip", () 
   });
 
   it("keeps a concave subject's concavity", () => {
-    // an L, entirely inside the clip -- Sutherland-Hodgman allows this and it
-    // is why the triangle is the clip rather than the subject
     const ell: Point[] = [
       [1, 1],
       [7, 1],
@@ -141,8 +136,6 @@ describe("clipTriangle -- what becomes of one mesh triangle", () => {
   });
 
   it("keeps nothing outside the outline once cut", () => {
-    // the requirement, stated directly: no part of a kept polygon may sit
-    // outside the curve
     const verdict = clipTriangle(tri([0.5, 0], [1.5, 0], [0.5, 1]), outline);
     assert.equal(verdict.kind, "cut");
     if (verdict.kind !== "cut") return;
@@ -174,13 +167,11 @@ describe("clipTriangle -- what becomes of one mesh triangle", () => {
   });
 
   it("drops a sliver rather than emitting a degenerate polygon", () => {
-    // the curve grazing a corner leaves an unrenderable splinter
     assert.equal(clipTriangle(tri([1 - 1e-7, 0], [3, 0], [3, 2]), outline).kind, "drop");
   });
 
   it("handles a concave outline, which is the whole point", () => {
     const crescent = shapeOutline(CRESCENT, UNIT)!;
-    // straight through the bite: the kept part must avoid the notch
     const verdict = clipTriangle(tri([0, -0.2], [0.9, 0], [0, 0.2]), crescent);
     if (verdict.kind === "cut") {
       for (const fragment of verdict.triangles) {
@@ -204,9 +195,6 @@ describe("clipTriangle -- holes", () => {
   });
 
   it("drops rather than covers a triangle on the hole's rim", () => {
-    // documented conservative choice: subtracting a hole is a different
-    // operation from clipping to a convex region, and never spilling matters
-    // more here than the thin band it costs
     const verdict = clipTriangle(tri([0.2, 0.2], [0.7, 0.2], [0.2, 0.7]), outline);
     assert.equal(verdict.kind, "drop");
   });
@@ -214,8 +202,6 @@ describe("clipTriangle -- holes", () => {
 
 describe("the cut is watertight", () => {
   it("two triangles sharing an edge agree about where the curve crosses it", () => {
-    // no coordination between neighbours: they cut the same edge against the
-    // same curve, so the crossing points must come out identical
     const outline = shapeOutline(CRESCENT, { cx: 0, cy: 0, radius: 10 })!;
     const shared: [Point, Point] = [
       [2, -6],

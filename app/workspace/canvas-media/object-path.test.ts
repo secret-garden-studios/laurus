@@ -408,7 +408,6 @@ describe("what the pen holds on to between commits", () => {
     ];
 
     for (const to of DRAGS) {
-      // the pointer, read through whatever geometry is on the prop now
       const at: Point = [(to[0] - geometry.cx) / geometry.radius, (to[1] - geometry.cy) / geometry.radius];
       ring = moveAnchor(ring, 0, at);
       const edit = normalizeEditedRings([ring], geometry);

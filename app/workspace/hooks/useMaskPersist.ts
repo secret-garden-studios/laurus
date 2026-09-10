@@ -12,6 +12,7 @@ import {
 } from "@/app/projects/projects.server";
 import { UNAUTHORIZED_EDIT } from "@/app/landing.server";
 import { LaurusImgResult, LaurusMaskResult } from "../workspace.server";
+import { clampFrameToCanvas } from "../canvas-media/canvas-space";
 
 export type MaskSourceFrame = Pick<LaurusProjectImg, "width" | "height" | "top" | "left" | "scale_x" | "scale_y">;
 
@@ -37,13 +38,25 @@ export function useMaskPersist() {
           ...Array.from(coreState.project.svgs.values()).map((s) => s.order),
           ...Array.from(coreState.project.masks.values()).map((v) => v.order),
         ) + 1;
+      const width = copy?.size.value && copy.size.width !== undefined ? copy.size.width : sourceFrame.width;
+      const height = copy?.size.value && copy.size.height !== undefined ? copy.size.height : sourceFrame.height;
+      const placed = clampFrameToCanvas(
+        {
+          x: copy?.position.value && copy.position.x !== undefined ? copy.position.x : sourceFrame.left,
+          y: copy?.position.value && copy.position.y !== undefined ? copy.position.y : sourceFrame.top,
+          width: width * sourceFrame.scale_x,
+          height: height * sourceFrame.scale_y,
+        },
+        coreState.project.canvas_width,
+        coreState.project.canvas_height,
+      );
       const projectMask: LaurusProjectMask = {
         media_id: result.mask_media_id,
         media_group_id: "",
-        width: copy?.size.value && copy.size.width !== undefined ? copy.size.width : sourceFrame.width,
-        height: copy?.size.value && copy.size.height !== undefined ? copy.size.height : sourceFrame.height,
-        top: copy?.position.value && copy.position.y !== undefined ? copy.position.y : sourceFrame.top,
-        left: copy?.position.value && copy.position.x !== undefined ? copy.position.x : sourceFrame.left,
+        width,
+        height,
+        top: placed.y,
+        left: placed.x,
         order,
         scale_x: sourceFrame.scale_x,
         scale_y: sourceFrame.scale_y,

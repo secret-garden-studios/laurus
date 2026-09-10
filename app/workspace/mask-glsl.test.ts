@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { LIGHT_SOURCE_SHADER } from "./mask-gl.ts";
+import {
+  HIGHLIGHT_MOVING_COLOR,
+  HIGHLIGHT_SELECTED_COLOR,
+  HIGHLIGHT_SHADOW_COLOR,
+  HIGHLIGHT_SIBLING_COLOR,
+  highlightObjectReviewAddedColor,
+  gridlinesHighlightColor,
+} from "./mask-constants.ts";
 
 function functions(source: string): { params: string[]; body: string }[] {
   const found: { params: string[]; body: string }[] = [];
@@ -181,5 +189,46 @@ describe("the mask shader's identifiers and declaration order", () => {
   it("leaves a call below its definition alone", () => {
     const fine = "float helper() { return 1.0; }\nvoid main() { helper(); }";
     assert.deepEqual(callsBeforeDeclaration(fine), []);
+  });
+});
+
+describe("the highlight drop shadow", () => {
+  const source = LIGHT_SOURCE_SHADER.fragment;
+  const match = Number(/HIGHLIGHT_SHADOW_MATCH = ([\d.]+)/.exec(source)?.[1]);
+  const offRgb = (color: readonly number[]) =>
+    Math.hypot(...HIGHLIGHT_SELECTED_COLOR.slice(0, 3).map((c, i) => c - color[i]));
+
+  it("reads its appearance from the mask constants", () => {
+    assert.ok(Number.isFinite(match), "the shader should carry a match tolerance to read");
+    assert.match(source, /#define HIGHLIGHT_SHADOW_COLOR vec3\(/);
+    assert.match(source, new RegExp(`#define HIGHLIGHT_SHADOW_ALPHA ${HIGHLIGHT_SHADOW_COLOR[3].toFixed(6)}`));
+    assert.match(source, /#define HIGHLIGHT_SHADOW_OFFSET_X_PX /);
+    assert.match(source, /#define HIGHLIGHT_SHADOW_OFFSET_Y_PX /);
+    assert.match(source, /#define HIGHLIGHT_SHADOW_BLUR_PX /);
+  });
+
+  it("sits behind the highlight rather than over it", () => {
+    assert.match(source, /mix\(withGlow, HIGHLIGHT_SHADOW_COLOR, lightShadow\)/);
+    assert.match(source, /mix\(withHighlightShadow, v_highlight\.rgb, lightEdge\)/);
+  });
+
+  it("gates on an rgb the selected and sibling colors share", () => {
+    assert.deepEqual(
+      HIGHLIGHT_SIBLING_COLOR.slice(0, 3),
+      HIGHLIGHT_SELECTED_COLOR.slice(0, 3),
+      "the shader asks for a shadow by rgb -- the two highlight colors have to agree on one",
+    );
+    assert.ok(offRgb(HIGHLIGHT_SIBLING_COLOR) <= match, "the sibling colour should pass the shader's gate");
+  });
+
+  it("leaves every other highlight colour unshadowed", () => {
+    const others = {
+      moving: HIGHLIGHT_MOVING_COLOR,
+      shapeEdit: gridlinesHighlightColor(1),
+      reviewAdded: highlightObjectReviewAddedColor(1),
+    };
+    for (const [name, color] of Object.entries(others)) {
+      assert.ok(offRgb(color) > match, `${name} would slip through the shader's shadow gate`);
+    }
   });
 });

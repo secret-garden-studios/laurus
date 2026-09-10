@@ -25,11 +25,16 @@ import {
   HIGHLIGHT_SIBLING_COLOR,
   highlightCss,
   highlightObjectReviewAddedColor,
-  highlightShapeEditColor,
+  GRIDLINES_ADDED_COLOR,
+  gridlinesHighlightColor,
   LIGHT_CAST_ENDLESS,
   MaskLightSource,
+  Matrix2,
   ObjectGeometryInput,
+  type PlacedShape,
   ObjectRotation,
+  objectForwardTransform,
+  placeShape,
   objectTransform,
   TEXTURE_MIX_DEFAULT,
   uploadCurveMask,
@@ -43,10 +48,12 @@ import {
   MaskEditSession,
   UIActionType,
   editedRegion,
+  gridlinesValue,
   isAwaitingRegionPick,
   isMaskDropZoneArmed,
   isMaskEditLocked,
   isPenArmed,
+  maskEditSubject,
 } from "../states/ui-state";
 import { DEFAULT_CONTEXT_MENU_CONFIG, LaurusProjectMask } from "../../projects/projects.server";
 import { UseMaskPreview } from "../hooks/useMaskPreview";
@@ -59,9 +66,10 @@ import {
   centerOfIndices,
   dropIndicesClaimedByObjects,
   indicesInObjectFromCentroids,
-  objectIdAtPoint,
+  elementAtPoint,
   swelledPolygonIndexAtPoint,
 } from "./light-geometry";
+import type { MaskHitScene } from "./light-geometry";
 import {
   MaskGeometry,
   maskGeometry,
@@ -114,6 +122,12 @@ function maskEditSubjectFor(
   if (session?.maskKey !== maskKey) return undefined;
   const region = editedRegion(session);
   return region && { subject: session.subject, id: region.id };
+}
+
+function maskEditBaseIndices(session: MaskEditSession | undefined, lights: Map<number, Set<number>>): Set<number> {
+  if (!session) return new Set();
+  if (session.subject === "light") return lights.get(session.light.id) ?? new Set();
+  return new Set(session.candidates[session.currentIndex]?.polygon_indices ?? []);
 }
 
 function withoutNeighbouringObjects(
@@ -181,6 +195,52 @@ function toObjectGeometry(object: LaurusObject): ObjectGeometryInput {
   };
 }
 
+export interface OutlineOffset {
+  dx: number;
+  dy: number;
+  scale: number;
+  transform: Matrix2 | undefined;
+}
+
+interface PlaybackLight {
+  dx: number;
+  dy: number;
+  scale: number;
+  restX: number;
+  restY: number;
+  size: number;
+  order: number;
+  lowpoly: boolean;
+  spread: number;
+  intensity: number;
+  shadow: number;
+  cast: number;
+  transform: ObjectRotation | undefined;
+}
+
+type DrawnRegion = EditableRegion & { transform?: Matrix2 };
+
+const NO_OUTLINE_OFFSETS: ReadonlyMap<number, OutlineOffset> = new Map();
+
+function sameOutlineOffsets(a: ReadonlyMap<number, OutlineOffset>, b: ReadonlyMap<number, OutlineOffset>): boolean {
+  if (a.size !== b.size) return false;
+  for (const [id, offset] of a) {
+    const other = b.get(id);
+    if (!other || other.dx !== offset.dx || other.dy !== offset.dy || other.scale !== offset.scale) return false;
+    if (!sameMatrix2(other.transform, offset.transform)) return false;
+  }
+  return true;
+}
+
+function outlineOffsetKey(offset: OutlineOffset): string {
+  return `${offset.dx},${offset.dy},${offset.scale},${offset.transform?.join(",") ?? ""}`;
+}
+
+function sameMatrix2(a: Matrix2 | undefined, b: Matrix2 | undefined): boolean {
+  if (!a || !b) return a === b;
+  return a[0] === b[0] && a[1] === b[1] && a[2] === b[2] && a[3] === b[3];
+}
+
 function toBufferPoint(canvas: HTMLCanvasElement, clientX: number, clientY: number): [number, number] | undefined {
   const rect = canvas.getBoundingClientRect();
   if (rect.width === 0 || rect.height === 0) return undefined;
@@ -195,6 +255,7 @@ export interface MaskPlaybackSession {
 }
 
 export interface MaskImperativeHandle {
+  animatedOffsetFor: (subject: { type: "light" | "object"; id: number }) => OutlineOffset | undefined;
   play: (effectKey?: string, lightId?: number, objectId?: number) => Promise<void>;
   preparePlayback: (
     effectKey?: string,
@@ -210,6 +271,7 @@ export interface MaskImperativeHandle {
   setPendingLight: (indices: Set<number>, lightId?: number) => void;
   clearPendingLight: () => void;
   syncLitIndices: (updated: LaurusMaskResult) => void;
+  setKeyframePreview: (preview: KeyframePreview | undefined) => void;
   setPendingTopology: (edit: PendingTopologyEdit) => void;
   clearPendingTopology: () => void;
   retouchObjectMesh: () => void;
@@ -217,6 +279,17 @@ export interface MaskImperativeHandle {
   syncObjects: (updated: LaurusMaskResult) => void;
   applyMaskAppearanceDefaults: (override?: MaskAppearanceOverride) => void;
   onLightSourcePreviewToggled: (enabled: boolean) => void;
+}
+
+export interface KeyframePreview {
+  subject: "light" | "object";
+  id: number;
+  light_intensity?: number;
+  light_spread?: number;
+  light_shadow?: number;
+  object_elevation?: number;
+  object_falloff?: number;
+  object_fill?: LaurusObjectFill;
 }
 
 export interface MaskAppearanceOverride {
@@ -298,15 +371,15 @@ export function ProjectMaskItem({
     order: MASK_ORDER_UNRANKED,
   });
   const wiredMoveRef = useRef(false);
-  const playbackLightSourcesRef = useRef<Map<number, MaskLightSource>>(new Map());
+  const playbackLightSourcesRef = useRef<Map<number, PlaybackLight>>(new Map());
   const playbackObjectsRef = useRef<
     Map<
       number,
       {
-        cx: number;
-        cy: number;
+        dx: number;
+        dy: number;
         elevation: number;
-        radius: number;
+        scale: number;
         falloff: number;
         fill: LaurusObjectFill;
         rotation: ObjectRotation | undefined;
@@ -314,6 +387,12 @@ export function ProjectMaskItem({
     >
   >(new Map());
   const playingObjectIdsRef = useRef<Set<number>>(new Set());
+  const animatedLightOffsetsRef = useRef<Map<number, OutlineOffset>>(new Map());
+  const [animatedLightOffsets, setAnimatedLightOffsets] =
+    useState<ReadonlyMap<number, OutlineOffset>>(NO_OUTLINE_OFFSETS);
+  const animatedObjectOffsetsRef = useRef<Map<number, OutlineOffset>>(new Map());
+  const [animatedObjectOffsets, setAnimatedObjectOffsets] =
+    useState<ReadonlyMap<number, OutlineOffset>>(NO_OUTLINE_OFFSETS);
   const activePlaybackRef = useRef<{ rafId: number | undefined; resolve: () => void } | undefined>(undefined);
   const lightDragRef = useRef<
     | {
@@ -339,6 +418,7 @@ export function ProjectMaskItem({
   const objectReviewPreviewRef = useRef<Set<number> | undefined>(undefined);
   const objectReviewDiffBaseRef = useRef<Set<number> | undefined>(undefined);
   const maskEditSubjectRef = useRef<{ subject: "light" | "object"; id: number } | undefined>(undefined);
+  const keyframePreviewRef = useRef<KeyframePreview | undefined>(undefined);
   const editingShapeRef = useRef(false);
   const pendingLightRef = useRef<Set<number> | undefined>(undefined);
   const pendingLightIdRef = useRef<number | undefined>(undefined);
@@ -362,6 +442,8 @@ export function ProjectMaskItem({
   const fillOverlayScratchRef = useRef<Float32Array>(new Float32Array(0));
   const fillOverlayUploadedRef = useRef<Float32Array>(new Float32Array(0));
   const selectedObjectIdRef = useRef<number | undefined>(undefined);
+  const editGridlinesRef = useRef(0);
+  const editedPlacedRef = useRef(false);
   const lightIndicesAtOffset = useCallback(
     (drag: NonNullable<typeof lightDragRef.current>, dx: number, dy: number): Set<number> => {
       if (source.kind !== "static") return new Set();
@@ -410,30 +492,69 @@ export function ProjectMaskItem({
     notifyMaskPendingLightCleared(mediaKey);
   }, [dispatch, mediaKey, notifyMaskPendingLightCleared]);
 
-  const resolveObjectUniforms = useCallback((): ObjectGeometryInput[] => {
+  const objectGridlinesMix = useCallback(
+    (objectId: number): number => {
+      const { uiState: latest } = latestRef.current;
+      const edited = maskEditSubjectFor(latest.maskEdit, mediaKey);
+      const stored = latest.objectGridlines.find((g) => g.key === mediaKey && g.objectId === objectId)?.value ?? 0;
+      if (edited?.subject === "object" && edited.id === objectId) return editedPlacedRef.current ? stored : 0;
+      return stored;
+    },
+    [mediaKey],
+  );
+
+  const resolveObjectUniforms = useCallback((): (ObjectGeometryInput & { id: number })[] => {
+    const preview = keyframePreviewRef.current;
+    const previewObjectId = preview?.subject === "object" ? preview.id : undefined;
+    const withPreview = (object: ObjectGeometryInput, id: number): ObjectGeometryInput =>
+      id === previewObjectId && preview
+        ? {
+            ...object,
+            elevation: preview.object_elevation ?? object.elevation,
+            falloff: preview.object_falloff ?? object.falloff,
+            fill: preview.object_fill ?? object.fill,
+          }
+        : object;
     const pending = pendingTopologyRef.current;
     const pendingShape = pending ? cachedObjectShape(pending.shape, pendingTileSize(pending)) : undefined;
     const restingFill = (object: ObjectGeometryInput): ObjectGeometryInput =>
       object.fill ? { ...object, fill: { ...object.fill, a: 0 } } : object;
+    const withGridlines = (object: ObjectGeometryInput, id: number): ObjectGeometryInput => {
+      const mix = objectGridlinesMix(id);
+      return mix > 0 ? { ...object, gridlines: mix } : object;
+    };
     const animating = playingObjectIdsRef.current;
-    const objects = objectsRef.current.map((object): ObjectGeometryInput => {
+    const objects = objectsRef.current.map((object): ObjectGeometryInput & { id: number } => {
       const shape = cachedObjectShape(object.shape);
       const playing = playbackObjectsRef.current.get(object.id);
       if (playing) {
-        return {
-          cx: playing.cx,
-          cy: playing.cy,
-          radius: playing.radius,
-          elevation: playing.elevation,
-          falloff: playing.falloff,
-          order: object.order,
-          shape,
-          fill: playing.fill,
-          rotation: playing.rotation,
-          lift: object.lift ? { cx: object.cx, cy: object.cy, radius: object.radius } : undefined,
+        const edited = pending && pending.objectId === object.id ? pending : undefined;
+        const rest = {
+          cx: edited?.cx ?? object.cx,
+          cy: edited?.cy ?? object.cy,
+          radius: edited?.radius ?? object.radius,
         };
+        const animated = withGridlines(
+          withPreview(
+            {
+              cx: rest.cx + playing.dx,
+              cy: rest.cy + playing.dy,
+              radius: rest.radius * playing.scale,
+              elevation: edited?.elevation ?? playing.elevation,
+              falloff: edited?.falloff ?? playing.falloff,
+              order: object.order,
+              shape: edited ? pendingShape : shape,
+              fill: edited?.fill ?? playing.fill,
+              rotation: playing.rotation,
+              lift: object.lift ? rest : undefined,
+            },
+            object.id,
+          ),
+          object.id,
+        );
+        return { ...animated, id: object.id };
       }
-      const geometry =
+      const geometry = withGridlines(
         pending && pending.objectId === object.id
           ? {
               cx: pending.cx,
@@ -445,24 +566,33 @@ export function ProjectMaskItem({
               shape: pendingShape,
               fill: pending.fill,
             }
-          : toObjectGeometry(object);
-      return animating.has(object.id) ? geometry : restingFill(geometry);
+          : toObjectGeometry(object),
+        object.id,
+      );
+      if (object.id === previewObjectId) return { ...withPreview(geometry, object.id), id: object.id };
+      return { ...(animating.has(object.id) ? geometry : restingFill(geometry)), id: object.id };
     });
     if (pending && !objectsRef.current.some((object) => object.id === pending.objectId)) {
-      const candidate: ObjectGeometryInput = {
-        cx: pending.cx,
-        cy: pending.cy,
-        radius: pending.radius,
-        elevation: pending.elevation,
-        falloff: pending.falloff,
-        order: frontElementOrder([...objectsRef.current, ...lightsMetaRef.current.values()]),
-        shape: pendingShape,
-        fill: pending.fill,
-      };
-      objects.push(animating.has(pending.objectId) ? candidate : restingFill(candidate));
+      const candidate: ObjectGeometryInput = withGridlines(
+        {
+          cx: pending.cx,
+          cy: pending.cy,
+          radius: pending.radius,
+          elevation: pending.elevation,
+          falloff: pending.falloff,
+          order: frontElementOrder([...objectsRef.current, ...lightsMetaRef.current.values()]),
+          shape: pendingShape,
+          fill: pending.fill,
+        },
+        pending.objectId,
+      );
+      objects.push({
+        ...(animating.has(pending.objectId) ? candidate : restingFill(candidate)),
+        id: pending.objectId,
+      });
     }
     return objects;
-  }, []);
+  }, [objectGridlinesMix]);
 
   const isSelected = source.kind === "static" && selectedMaskKeys.has(mediaKey);
   const canvasSize =
@@ -500,8 +630,11 @@ export function ProjectMaskItem({
 
   const lightGridlinesMix = useCallback(
     (lightId: number): number => {
-      const gridlines = latestRef.current.uiState.lightGridlines;
-      return gridlines && gridlines.key === mediaKey && gridlines.lightId === lightId ? gridlines.value : 0;
+      const { uiState: latest } = latestRef.current;
+      const edited = maskEditSubjectFor(latest.maskEdit, mediaKey);
+      const stored = latest.lightGridlines.find((g) => g.key === mediaKey && g.lightId === lightId)?.value ?? 0;
+      if (edited?.subject === "light" && edited.id === lightId) return editedPlacedRef.current ? stored : 0;
+      return stored;
     },
     [mediaKey],
   );
@@ -513,6 +646,44 @@ export function ProjectMaskItem({
       return edit.lowpoly;
     },
     [mediaKey],
+  );
+
+  const previewedLightAppearance = useCallback(
+    (lightId: number, base: { spread: number; intensity: number; shadow: number }) => {
+      const preview = keyframePreviewRef.current;
+      if (!preview || preview.subject !== "light" || preview.id !== lightId) return base;
+      return {
+        spread: preview.light_spread ?? base.spread,
+        intensity: preview.light_intensity ?? base.intensity,
+        shadow: preview.light_shadow ?? base.shadow,
+      };
+    },
+    [],
+  );
+
+  const composePlaybackLight = useCallback(
+    (lightId: number, playing: PlaybackLight): MaskLightSource => {
+      const height = canvasRef.current?.height ?? 0;
+      const shaped = resolveLightSilhouette(lightId);
+      const restX = shaped ? shaped.cx : playing.restX;
+      const restY = shaped ? shaped.cy : playing.restY;
+      return {
+        x: restX + playing.dx,
+        y: height - (restY + playing.dy),
+        radius: (shaped ? shaped.radius : playing.size / 2) * playing.scale,
+        shape: shaped
+          ? cachedObjectShape(shaped.shape, shaped.draft ? OBJECT_SDF_DRAFT_TILE : OBJECT_SDF_TILE)
+          : undefined,
+        spread: playing.spread,
+        intensity: playing.intensity,
+        shadow: playing.shadow,
+        cast: playing.cast,
+        order: playing.order,
+        lowpoly: playing.lowpoly,
+        transform: playing.transform,
+      };
+    },
+    [resolveLightSilhouette],
   );
 
   const resolveRestingLightSources = useCallback((): MaskLightSource[] => {
@@ -527,9 +698,7 @@ export function ProjectMaskItem({
 
       const shaped = resolveLightSilhouette(lightId);
       const appearance = {
-        spread: meta.spread,
-        intensity: meta.intensity,
-        shadow: meta.shadow,
+        ...previewedLightAppearance(lightId, { spread: meta.spread, intensity: meta.intensity, shadow: meta.shadow }),
         cast: meta.cast,
         order: meta.order,
         gridlines: lightGridlinesMix(lightId),
@@ -558,7 +727,7 @@ export function ProjectMaskItem({
       });
     });
     return lights;
-  }, [resolveLightSilhouette, lightGridlinesMix, lightLowpoly]);
+  }, [resolveLightSilhouette, lightGridlinesMix, lightLowpoly, previewedLightAppearance]);
 
   const dragDisabled = useMemo(() => {
     return source.kind === "live" || uiState.tool.type != "move";
@@ -612,6 +781,36 @@ export function ProjectMaskItem({
     };
   }, []);
 
+  const drawnLightRegion = useCallback(
+    (light: LaurusLight, indices: Set<number>, offset: OutlineOffset | undefined): DrawnRegion => {
+      const resting = lightRegion(light, indices);
+      if (!offset) return resting;
+      return {
+        ...resting,
+        cx: resting.cx + offset.dx,
+        cy: resting.cy + offset.dy,
+        radius: resting.radius * offset.scale,
+        transform: offset.transform,
+      };
+    },
+    [lightRegion],
+  );
+
+  const resolveHitScene = useCallback(
+    (maskData: LaurusMaskResult): MaskHitScene => ({
+      objects: resolveObjectUniforms(),
+      lights: maskData.lights.map((light) => {
+        const drawn = drawnLightRegion(
+          light,
+          new Set(polygonIndicesForLight(maskData.polygons, light.id)),
+          animatedLightOffsetsRef.current.get(light.id),
+        );
+        return { ...drawn, id: light.id, order: light.order };
+      }),
+    }),
+    [resolveObjectUniforms, drawnLightRegion],
+  );
+
   const reviewShape = useMemo(() => {
     const session = uiState.maskEdit;
     if (source.kind !== "static" || session?.maskKey !== mediaKey) return undefined;
@@ -653,6 +852,35 @@ export function ProjectMaskItem({
       original: changed ? { cx: opened.cx, cy: opened.cy, radius: opened.radius, shape: opened.shape } : undefined,
     };
   }, [uiState.maskEdit, source.kind, mediaKey, coreState.canvasMasks, lightRegion]);
+
+  const editedPlacement = useMemo((): { place: PlacedShape; seat: string } | undefined => {
+    const region = reviewShape?.current;
+    const subject = uiState.maskEdit?.subject;
+    if (!region || region.radius <= 0 || !subject) return undefined;
+    if (subject === "light") {
+      const offset = animatedLightOffsets.get(region.id);
+      return offset && { place: placeShape(region, region, offset), seat: outlineOffsetKey(offset) };
+    }
+    const offset = animatedObjectOffsets.get(region.id);
+    if (!offset) return undefined;
+    const rest = coreState.canvasMasks.get(mediaKey)?.objects.find((object) => object.id === region.id);
+    if (!rest || rest.radius <= 0) return undefined;
+    return { place: placeShape(region, rest, offset), seat: outlineOffsetKey(offset) };
+  }, [
+    reviewShape,
+    uiState.maskEdit?.subject,
+    animatedLightOffsets,
+    animatedObjectOffsets,
+    coreState.canvasMasks,
+    mediaKey,
+  ]);
+
+  const selectedAnchorOffset = useMemo((): OutlineOffset | undefined => {
+    const selected = uiState.selectedElement?.key === mediaKey ? uiState.selectedElement : undefined;
+    if (selected?.type === "light") return animatedLightOffsets.get(selected.lightId);
+    if (selected?.type === "object") return animatedObjectOffsets.get(selected.objectId);
+    return undefined;
+  }, [uiState.selectedElement, mediaKey, animatedLightOffsets, animatedObjectOffsets]);
 
   const shapeEditorObject = uiState.maskEdit?.editingShape ? reviewShape : undefined;
 
@@ -784,11 +1012,15 @@ export function ProjectMaskItem({
 
     const lightSources: MaskLightSource[] = [
       ...(wiredMoveRef.current
-        ? Array.from(playbackLightSourcesRef.current.entries()).map(([lightId, light]) => ({
-            ...light,
-            gridlines: lightGridlinesMix(lightId),
-            lowpoly: lightLowpoly(lightId, light.lowpoly ?? false),
-          }))
+        ? Array.from(playbackLightSourcesRef.current.entries()).map(([lightId, playing]) => {
+            const light = composePlaybackLight(lightId, playing);
+            return {
+              ...light,
+              ...previewedLightAppearance(lightId, light),
+              gridlines: lightGridlinesMix(lightId),
+              lowpoly: lightLowpoly(lightId, light.lowpoly ?? false),
+            };
+          })
         : [
             {
               ...lightSourceRef.current,
@@ -811,7 +1043,14 @@ export function ProjectMaskItem({
       backingVertexCount: backingVertexCountRef.current,
       backingGrey: backingGreyRef.current,
     });
-  }, [resolveObjectUniforms, resolveRestingLightSources, lightGridlinesMix, lightLowpoly]);
+  }, [
+    resolveObjectUniforms,
+    resolveRestingLightSources,
+    composePlaybackLight,
+    lightGridlinesMix,
+    lightLowpoly,
+    previewedLightAppearance,
+  ]);
   renderRef.current = render;
 
   const recolorHighlight = useCallback(() => {
@@ -857,20 +1096,12 @@ export function ProjectMaskItem({
       paintInto(highlights, indices, color);
 
     const pendingLight = pendingLightRef.current;
-    const maskEditSubject = maskEditSubjectRef.current;
+    const editedSubject = maskEditSubjectRef.current;
     if (pendingLight && pendingLight.size > 0 && !suppressed) {
       paint(pendingLight, HIGHLIGHT_MOVING_COLOR);
     }
 
     const pendingTopology = pendingTopologyRef.current;
-    if ((selectedHighlightRef.current || pickHoverRef.current) && !suppressed) {
-      const activeObjectId = selectedObjectIdRef.current;
-      objectsMapRef.current.forEach((indices, objectId) => {
-        if (objectId === pendingTopology?.objectId) return;
-        if (maskEditSubject?.subject === "object" && objectId === maskEditSubject.id) return;
-        paint(indices, objectId === activeObjectId ? HIGHLIGHT_SELECTED_COLOR : HIGHLIGHT_SIBLING_COLOR);
-      });
-    }
     if (pendingTopology && !suppressed) {
       paint(
         pendingTopology.polygonIndices ??
@@ -891,15 +1122,19 @@ export function ProjectMaskItem({
       objectReviewDiffBase.forEach((index) => {
         if (!objectReviewPreview?.has(index)) edited.add(index);
       });
-      paint(unchanged, HIGHLIGHT_SELECTED_COLOR);
-      paint(edited, highlightObjectReviewAddedColor(latestRef.current.uiState.gridlinesBright));
+      if (!editedPlacedRef.current) paint(unchanged, gridlinesHighlightColor(editGridlinesRef.current));
+      paint(edited, highlightObjectReviewAddedColor(editGridlinesRef.current));
     } else if (objectReviewPreview?.size && !suppressed) {
-      paint(
-        objectReviewPreview,
-        editingShapeRef.current
-          ? highlightShapeEditColor(latestRef.current.uiState.gridlinesBright)
-          : HIGHLIGHT_SELECTED_COLOR,
-      );
+      if (editingShapeRef.current) {
+        if (!editedPlacedRef.current) paint(objectReviewPreview, gridlinesHighlightColor(editGridlinesRef.current));
+      } else {
+        const base = maskEditBaseIndices(latestRef.current.uiState.maskEdit, lightsRef.current);
+        const kept = new Set<number>();
+        const added = new Set<number>();
+        objectReviewPreview.forEach((index) => (base.has(index) ? kept : added).add(index));
+        if (!editedPlacedRef.current) paint(kept, gridlinesHighlightColor(editGridlinesRef.current));
+        paint(added, GRIDLINES_ADDED_COLOR);
+      }
     }
 
     const animatingObjects = playingObjectIdsRef.current;
@@ -912,7 +1147,7 @@ export function ProjectMaskItem({
       fill: toObjectFill(object),
       behind: isBehindMask(object),
       indices:
-        maskEditSubject?.subject === "object" && maskEditSubject.id === object.id
+        editedSubject?.subject === "object" && editedSubject.id === object.id
           ? pendingTopology?.objectId === object.id && pendingTopology.draft
             ? pendingObjectIndices()
             : objectReviewPreview
@@ -931,7 +1166,7 @@ export function ProjectMaskItem({
     objectFills.forEach(({ id, fill, indices, behind }) => {
       if (animatingObjects.has(id)) return;
       if (behind) return;
-      if (suppressed && maskEditSubject?.subject === "object" && maskEditSubject.id === id) return;
+      if (suppressed && editedSubject?.subject === "object" && editedSubject.id === id) return;
       if (!indices || fill.a <= 0) return;
       paintInto(fillOverlay, indices, [fill.r, fill.g, fill.b, fill.a]);
     });
@@ -985,6 +1220,19 @@ export function ProjectMaskItem({
     lightCastRef.current = maskMeta?.light_preview_cast ?? LIGHT_CAST_ENDLESS;
   }, [source, coreState.project.masks, mediaKey]);
 
+  const publishAnimatedOffsets = useCallback(() => {
+    setAnimatedLightOffsets((previous) =>
+      sameOutlineOffsets(previous, animatedLightOffsetsRef.current)
+        ? previous
+        : new Map(animatedLightOffsetsRef.current),
+    );
+    setAnimatedObjectOffsets((previous) =>
+      sameOutlineOffsets(previous, animatedObjectOffsetsRef.current)
+        ? previous
+        : new Map(animatedObjectOffsetsRef.current),
+    );
+  }, []);
+
   const stopLightSourceAnimation = useCallback(() => {
     const session = activePlaybackRef.current;
     if (session) {
@@ -994,20 +1242,41 @@ export function ProjectMaskItem({
     }
     wiredMoveRef.current = false;
     playbackLightSourcesRef.current = new Map();
+    animatedLightOffsetsRef.current = new Map();
     playbackObjectsRef.current = new Map();
+    animatedObjectOffsetsRef.current = new Map();
+    publishAnimatedOffsets();
     const wasAnimating = playingObjectIdsRef.current.size > 0;
     playingObjectIdsRef.current = new Set();
     lightSourceRef.current = { x: 0, y: 0, radius: 0, spread: 0, order: MASK_ORDER_UNRANKED };
     applyDefaultLightValue();
     render();
     if (wasAnimating) recolorHighlight();
-  }, [render, recolorHighlight, applyDefaultLightValue]);
+  }, [render, recolorHighlight, applyDefaultLightValue, publishAnimatedOffsets]);
+
+  const supersedeActivePlayback = useCallback(() => {
+    const session = activePlaybackRef.current;
+    if (!session) return;
+    if (session.rafId !== undefined) cancelAnimationFrame(session.rafId);
+    activePlaybackRef.current = undefined;
+    session.resolve();
+  }, []);
 
   const preparePlayback = useCallback(
     (effectKey?: string, lightId?: number, objectId?: number): Promise<MaskPlaybackSession | undefined> => {
-      stopLightSourceAnimation();
-      if (source.kind !== "static") return Promise.resolve(undefined);
+      supersedeActivePlayback();
+      if (source.kind !== "static") {
+        stopLightSourceAnimation();
+        return Promise.resolve(undefined);
+      }
       const playAll = effectKey === undefined && lightId === undefined && objectId === undefined;
+      const wiredStart = (inputId: string, kind?: LaurusEffect["type"]) =>
+        Math.min(
+          Infinity,
+          ...coreState.effects
+            .filter((effect) => (kind === undefined || effect.type === kind) && effect.value.math.has(inputId))
+            .map((effect) => effect.value.start),
+        );
       const candidateLightIds = playAll
         ? Array.from(lightsRef.current.keys())
         : objectId !== undefined
@@ -1045,7 +1314,12 @@ export function ProjectMaskItem({
           return { lightId: id, inputId, wiredMove, wiredLightSource, wiredScale, wiredSkew };
         })
         .filter((t) => t.wiredMove || t.wiredLightSource || t.wiredScale || t.wiredSkew)
-        .map((t) => ({ ...t, restPosition: computeLightSourceRestPosition(t.lightId) }));
+        .map((t) => ({
+          ...t,
+          restPosition: computeLightSourceRestPosition(t.lightId),
+          animatesFrom: wiredStart(t.inputId),
+          lightSourceFrom: wiredStart(t.inputId, "light_source"),
+        }));
 
       const candidateObjectIds = playAll
         ? objectsRef.current.map((object) => object.id)
@@ -1087,9 +1361,17 @@ export function ProjectMaskItem({
           );
           return { objectId: id, inputId, wiredMove, wiredLightSource, wiredScale, wiredRotate, wiredSkew };
         })
-        .filter((t) => t.wiredMove || t.wiredLightSource || t.wiredScale || t.wiredRotate || t.wiredSkew);
+        .filter((t) => t.wiredMove || t.wiredLightSource || t.wiredScale || t.wiredRotate || t.wiredSkew)
+        .map((t) => ({
+          ...t,
+          animatesFrom: wiredStart(t.inputId),
+          lightSourceFrom: wiredStart(t.inputId, "light_source"),
+        }));
 
-      if (targets.length === 0 && objectTargets.length === 0) return Promise.resolve(undefined);
+      if (targets.length === 0 && objectTargets.length === 0) {
+        stopLightSourceAnimation();
+        return Promise.resolve(undefined);
+      }
 
       wiredMoveRef.current = targets.length > 0;
 
@@ -1106,27 +1388,38 @@ export function ProjectMaskItem({
       const skewFramesByLight = new Map<number, LaurusFrame[]>();
       const session: { rafId: number | undefined; resolve: () => void } = { rafId: undefined, resolve: () => {} };
       activePlaybackRef.current = session;
-      if (objectTargets.length > 0) {
-        playingObjectIdsRef.current = new Set(objectTargets.map((t) => t.objectId));
-        recolorHighlight();
-      }
-
       const projectFps = coreState.project.fps > 0 ? coreState.project.fps : 30;
+      playingObjectIdsRef.current = new Set(
+        objectTargets.filter((t) => !playAll || Math.round(t.animatesFrom * projectFps) <= 0).map((t) => t.objectId),
+      );
+      const drivenLightIds = new Set(targets.map((t) => t.lightId));
+      playbackLightSourcesRef.current.forEach((_, lightId) => {
+        if (!drivenLightIds.has(lightId)) playbackLightSourcesRef.current.delete(lightId);
+      });
+      animatedLightOffsetsRef.current.forEach((_, lightId) => {
+        if (!drivenLightIds.has(lightId)) animatedLightOffsetsRef.current.delete(lightId);
+      });
+      playbackObjectsRef.current.forEach((_, objectId) => {
+        if (!playingObjectIdsRef.current.has(objectId)) playbackObjectsRef.current.delete(objectId);
+      });
+      animatedObjectOffsetsRef.current.forEach((_, objectId) => {
+        if (!playingObjectIdsRef.current.has(objectId)) animatedObjectOffsetsRef.current.delete(objectId);
+      });
+      publishAnimatedOffsets();
+      render();
+      recolorHighlight();
+
       let fps: number;
       let totalFrames: number;
       let durationSeconds: number;
       let ready: Promise<void>;
 
-      const fetchFramesCached = (
-        inputId: string,
-        cacheKey: string,
-        fetcher: () => Promise<LaurusFrame[] | undefined>,
-      ): Promise<LaurusFrame[] | undefined> => {
+      const fetchMergedFramesCached = (inputId: string): Promise<LaurusFrame[] | undefined> => {
         const stale = coreState.inputsToRender.has("*") || coreState.inputsToRender.has(inputId);
-        const cached = !stale ? framesCacheRef?.current?.get(cacheKey) : undefined;
+        const cached = !stale ? framesCacheRef?.current?.get(inputId) : undefined;
         if (cached) return Promise.resolve(cached);
-        return fetcher().then((result) => {
-          if (result && framesCacheRef?.current) framesCacheRef.current.set(cacheKey, [...result]);
+        return getFrames(coreState.apiOrigin, coreState.project.project_id, inputId, fps).then((result) => {
+          if (result && framesCacheRef?.current) framesCacheRef.current.set(inputId, [...result]);
           return result;
         });
       };
@@ -1137,17 +1430,13 @@ export function ProjectMaskItem({
         durationSeconds = 0;
         ready = Promise.all([
           ...targets.map((t) =>
-            fetchFramesCached(t.inputId, t.inputId, () =>
-              getFrames(coreState.apiOrigin, coreState.project.project_id, t.inputId, fps),
-            ).then((result) => {
+            fetchMergedFramesCached(t.inputId).then((result) => {
               if (activePlaybackRef.current !== session) return;
               mergedFramesByLight.set(t.lightId, result ?? []);
             }),
           ),
           ...objectTargets.map((t) =>
-            fetchFramesCached(t.inputId, t.inputId, () =>
-              getFrames(coreState.apiOrigin, coreState.project.project_id, t.inputId, fps),
-            ).then((result) => {
+            fetchMergedFramesCached(t.inputId).then((result) => {
               if (activePlaybackRef.current !== session) return;
               mergedFramesByObject.set(t.objectId, result ?? []);
             }),
@@ -1175,9 +1464,7 @@ export function ProjectMaskItem({
         if (objectTarget.wiredMove) {
           const wiredMove = objectTarget.wiredMove;
           objectFetches.push(
-            fetchFramesCached(objectTarget.inputId, `move:${objectTarget.inputId}`, () =>
-              getMoveFrames(coreState.apiOrigin, wiredMove.key, objectTarget.inputId),
-            ).then((result) => {
+            getMoveFrames(coreState.apiOrigin, wiredMove.key, objectTarget.inputId).then((result) => {
               if (activePlaybackRef.current === session && result)
                 moveFramesByObject.set(objectTarget.objectId, result);
             }),
@@ -1186,9 +1473,7 @@ export function ProjectMaskItem({
         if (objectTarget.wiredLightSource) {
           const wiredLightSource = objectTarget.wiredLightSource;
           objectFetches.push(
-            fetchFramesCached(objectTarget.inputId, `light_source:${objectTarget.inputId}`, () =>
-              getLightSourceFrames(coreState.apiOrigin, wiredLightSource.key, objectTarget.inputId),
-            ).then((result) => {
+            getLightSourceFrames(coreState.apiOrigin, wiredLightSource.key, objectTarget.inputId).then((result) => {
               if (activePlaybackRef.current === session && result)
                 lightSourceFramesByObject.set(objectTarget.objectId, result);
             }),
@@ -1197,9 +1482,7 @@ export function ProjectMaskItem({
         if (objectTarget.wiredScale) {
           const wiredScale = objectTarget.wiredScale;
           objectFetches.push(
-            fetchFramesCached(objectTarget.inputId, `scale:${objectTarget.inputId}`, () =>
-              getScaleFrames(coreState.apiOrigin, wiredScale.key, objectTarget.inputId),
-            ).then((result) => {
+            getScaleFrames(coreState.apiOrigin, wiredScale.key, objectTarget.inputId).then((result) => {
               if (activePlaybackRef.current === session && result)
                 scaleFramesByObject.set(objectTarget.objectId, result);
             }),
@@ -1208,9 +1491,7 @@ export function ProjectMaskItem({
         if (objectTarget.wiredRotate) {
           const wiredRotate = objectTarget.wiredRotate;
           objectFetches.push(
-            fetchFramesCached(objectTarget.inputId, `rotate:${objectTarget.inputId}`, () =>
-              getRotateFrames(coreState.apiOrigin, wiredRotate.key, objectTarget.inputId),
-            ).then((result) => {
+            getRotateFrames(coreState.apiOrigin, wiredRotate.key, objectTarget.inputId).then((result) => {
               if (activePlaybackRef.current === session && result)
                 rotateFramesByObject.set(objectTarget.objectId, result);
             }),
@@ -1219,9 +1500,7 @@ export function ProjectMaskItem({
         if (objectTarget.wiredSkew) {
           const wiredSkew = objectTarget.wiredSkew;
           objectFetches.push(
-            fetchFramesCached(objectTarget.inputId, `skew:${objectTarget.inputId}`, () =>
-              getSkewFrames(coreState.apiOrigin, wiredSkew.key, objectTarget.inputId),
-            ).then((result) => {
+            getSkewFrames(coreState.apiOrigin, wiredSkew.key, objectTarget.inputId).then((result) => {
               if (activePlaybackRef.current === session && result)
                 skewFramesByObject.set(objectTarget.objectId, result);
             }),
@@ -1239,9 +1518,7 @@ export function ProjectMaskItem({
         if (target.wiredMove) {
           const wiredMove = target.wiredMove;
           fetches.push(
-            fetchFramesCached(target.inputId, `move:${target.inputId}`, () =>
-              getMoveFrames(coreState.apiOrigin, wiredMove.key, target.inputId),
-            ).then((result) => {
+            getMoveFrames(coreState.apiOrigin, wiredMove.key, target.inputId).then((result) => {
               if (activePlaybackRef.current === session && result) moveFramesByLight.set(target.lightId, result);
             }),
           );
@@ -1249,9 +1526,7 @@ export function ProjectMaskItem({
         if (target.wiredLightSource) {
           const wiredLightSource = target.wiredLightSource;
           fetches.push(
-            fetchFramesCached(target.inputId, `light_source:${target.inputId}`, () =>
-              getLightSourceFrames(coreState.apiOrigin, wiredLightSource.key, target.inputId),
-            ).then((result) => {
+            getLightSourceFrames(coreState.apiOrigin, wiredLightSource.key, target.inputId).then((result) => {
               if (activePlaybackRef.current === session && result) lightSourceFramesByLight.set(target.lightId, result);
             }),
           );
@@ -1259,9 +1534,7 @@ export function ProjectMaskItem({
         if (target.wiredScale) {
           const wiredScale = target.wiredScale;
           fetches.push(
-            fetchFramesCached(target.inputId, `scale:${target.inputId}`, () =>
-              getScaleFrames(coreState.apiOrigin, wiredScale.key, target.inputId),
-            ).then((result) => {
+            getScaleFrames(coreState.apiOrigin, wiredScale.key, target.inputId).then((result) => {
               if (activePlaybackRef.current === session && result) scaleFramesByLight.set(target.lightId, result);
             }),
           );
@@ -1269,9 +1542,7 @@ export function ProjectMaskItem({
         if (target.wiredSkew) {
           const wiredSkew = target.wiredSkew;
           fetches.push(
-            fetchFramesCached(target.inputId, `skew:${target.inputId}`, () =>
-              getSkewFrames(coreState.apiOrigin, wiredSkew.key, target.inputId),
-            ).then((result) => {
+            getSkewFrames(coreState.apiOrigin, wiredSkew.key, target.inputId).then((result) => {
               if (activePlaybackRef.current === session && result) skewFramesByLight.set(target.lightId, result);
             }),
           );
@@ -1283,8 +1554,14 @@ export function ProjectMaskItem({
         const canvas = canvasRef.current;
         if (!canvas) return;
         const { x: scaleX, y: scaleY } = bufferScaleRef.current;
+        const restingBefore = (from: number) => playAll && frameIndex < Math.round(from * fps);
 
         targets.forEach((t) => {
+          if (restingBefore(t.animatesFrom)) {
+            playbackLightSourcesRef.current.delete(t.lightId);
+            animatedLightOffsetsRef.current.delete(t.lightId);
+            return;
+          }
           const mergedFrames = mergedFramesByLight.get(t.lightId);
           const moveFrames = moveFramesByLight.get(t.lightId);
           const lightSourceFrames = lightSourceFramesByLight.get(t.lightId);
@@ -1296,13 +1573,15 @@ export function ProjectMaskItem({
             : moveFrames && moveFrames.length > 0
               ? moveFrames[Math.min(frameIndex, moveFrames.length - 1)]
               : undefined;
-          const lightPoint = playAll
-            ? t.wiredLightSource
-              ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
-              : undefined
-            : lightSourceFrames && lightSourceFrames.length > 0
-              ? lightSourceFrames[Math.min(frameIndex, lightSourceFrames.length - 1)]
-              : undefined;
+          const lightPoint = restingBefore(t.lightSourceFrom)
+            ? undefined
+            : playAll
+              ? t.wiredLightSource
+                ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
+                : undefined
+              : lightSourceFrames && lightSourceFrames.length > 0
+                ? lightSourceFrames[Math.min(frameIndex, lightSourceFrames.length - 1)]
+                : undefined;
           const scalePoint = playAll
             ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
             : scaleFrames && scaleFrames.length > 0
@@ -1313,12 +1592,8 @@ export function ProjectMaskItem({
             : skewFrames && skewFrames.length > 0
               ? skewFrames[Math.min(frameIndex, skewFrames.length - 1)]
               : undefined;
-          const restX = t.restPosition?.x ?? canvas.width / 2;
-          const restY = t.restPosition?.y ?? canvas.height / 2;
           const pointX = movePoint?.x ?? 0;
           const pointY = movePoint?.y ?? 0;
-          const bufferX = restX + pointX * scaleX;
-          const bufferY = restY + pointY * scaleY;
           const lightMeta = source.maskData.lights.find((c) => c.id === t.lightId);
           const size = lightMeta?.size ?? lightSizeRef.current;
           const intensity = lightPoint?.light_intensity ?? lightMeta?.intensity ?? lightIntensityRef.current;
@@ -1326,25 +1601,40 @@ export function ProjectMaskItem({
           const shadow = lightPoint?.light_shadow ?? lightMeta?.shadow ?? lightShadowRef.current;
           const scaleMultiplier = scalePoint?.sx ?? 1;
 
-          const shapedMeta = resolveLightSilhouette(t.lightId);
+          const skewed = skewPoint ? { ax: skewPoint.ax, ay: skewPoint.ay } : undefined;
+          animatedLightOffsetsRef.current.set(t.lightId, {
+            dx: pointX * scaleX,
+            dy: pointY * scaleY,
+            scale: scaleMultiplier,
+            transform: objectForwardTransform(undefined, skewed),
+          });
           playbackLightSourcesRef.current.set(t.lightId, {
+            dx: pointX * scaleX,
+            dy: pointY * scaleY,
+            scale: scaleMultiplier,
+            restX: t.restPosition?.x ?? canvas.width / 2,
+            restY: t.restPosition?.y ?? canvas.height / 2,
+            size,
             order: lightMeta?.order ?? MASK_ORDER_UNRANKED,
             lowpoly: lightMeta?.lowpoly ?? false,
-            x: bufferX,
-            y: canvas.height - bufferY,
-            radius: (shapedMeta ? shapedMeta.radius : size / 2) * scaleMultiplier,
-            shape: shapedMeta ? cachedObjectShape(shapedMeta.shape) : undefined,
             spread,
             intensity,
             shadow,
             cast: lightMeta?.cast ?? lightCastRef.current,
-            transform: skewPoint ? objectTransform(undefined, { ax: skewPoint.ax, ay: skewPoint.ay }) : undefined,
+            transform: objectTransform(undefined, skewed),
           });
         });
 
         objectTargets.forEach((t) => {
           const object = objectsRef.current.find((p) => p.id === t.objectId);
           if (!object) return;
+          if (restingBefore(t.animatesFrom)) {
+            playbackObjectsRef.current.delete(t.objectId);
+            animatedObjectOffsetsRef.current.delete(t.objectId);
+            playingObjectIdsRef.current.delete(t.objectId);
+            return;
+          }
+          playingObjectIdsRef.current.add(t.objectId);
           const mergedFrames = mergedFramesByObject.get(t.objectId);
           const moveFrames = moveFramesByObject.get(t.objectId);
           const lightSourceFrames = lightSourceFramesByObject.get(t.objectId);
@@ -1357,13 +1647,15 @@ export function ProjectMaskItem({
             : moveFrames && moveFrames.length > 0
               ? moveFrames[Math.min(frameIndex, moveFrames.length - 1)]
               : undefined;
-          const lightSourcePoint = playAll
-            ? t.wiredLightSource
-              ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
-              : undefined
-            : lightSourceFrames && lightSourceFrames.length > 0
-              ? lightSourceFrames[Math.min(frameIndex, lightSourceFrames.length - 1)]
-              : undefined;
+          const lightSourcePoint = restingBefore(t.lightSourceFrom)
+            ? undefined
+            : playAll
+              ? t.wiredLightSource
+                ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
+                : undefined
+              : lightSourceFrames && lightSourceFrames.length > 0
+                ? lightSourceFrames[Math.min(frameIndex, lightSourceFrames.length - 1)]
+                : undefined;
           const scalePoint = playAll
             ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
             : scaleFrames && scaleFrames.length > 0
@@ -1382,32 +1674,32 @@ export function ProjectMaskItem({
           const cx = object.cx + (movePoint?.x ?? 0) * scaleX;
           const cy = object.cy + (movePoint?.y ?? 0) * scaleY;
           const elevation = lightSourcePoint?.object_elevation ?? object.elevation;
-          const radius = object.radius;
           const falloff = lightSourcePoint?.object_falloff ?? object.falloff;
           const fill = lightSourcePoint ? toEquationObjectFill(lightSourcePoint) : toObjectFill(object);
           const scaleMultiplier = scalePoint?.sx ?? 1;
 
+          const rotated = rotatePoint
+            ? { x: rotatePoint.rx, y: rotatePoint.ry, z: rotatePoint.rz, angleDegrees: rotatePoint.rangle }
+            : undefined;
+          const objectSkewed = skewPoint ? { ax: skewPoint.ax, ay: skewPoint.ay } : undefined;
+          animatedObjectOffsetsRef.current.set(t.objectId, {
+            dx: cx - object.cx,
+            dy: cy - object.cy,
+            scale: scaleMultiplier,
+            transform: objectForwardTransform(rotated, objectSkewed),
+          });
           playbackObjectsRef.current.set(t.objectId, {
-            cx,
-            cy,
+            dx: cx - object.cx,
+            dy: cy - object.cy,
             elevation,
-            radius: radius * scaleMultiplier,
+            scale: scaleMultiplier,
             falloff,
             fill,
-            rotation: objectTransform(
-              rotatePoint
-                ? {
-                    x: rotatePoint.rx,
-                    y: rotatePoint.ry,
-                    z: rotatePoint.rz,
-                    angleDegrees: rotatePoint.rangle,
-                  }
-                : undefined,
-              skewPoint ? { ax: skewPoint.ax, ay: skewPoint.ay } : undefined,
-            ),
+            rotation: objectTransform(rotated, objectSkewed),
           });
         });
         render();
+        publishAnimatedOffsets();
       };
 
       return ready.then((): MaskPlaybackSession | undefined => {
@@ -1451,7 +1743,6 @@ export function ProjectMaskItem({
       mediaKey,
       resolveTargetLightId,
       computeLightSourceRestPosition,
-      resolveLightSilhouette,
       coreState.effects,
       coreState.apiOrigin,
       coreState.project.fps,
@@ -1460,7 +1751,9 @@ export function ProjectMaskItem({
       framesCacheRef,
       render,
       recolorHighlight,
+      publishAnimatedOffsets,
       stopLightSourceAnimation,
+      supersedeActivePlayback,
     ],
   );
 
@@ -1507,13 +1800,24 @@ export function ProjectMaskItem({
     recolorHighlight();
   }, [uiState.maskEdit, mediaKey, recolorHighlight]);
 
+  const editGridlines = gridlinesValue(
+    uiState,
+    uiState.maskEdit?.maskKey === mediaKey ? maskEditSubject(uiState.maskEdit) : undefined,
+  );
+  editGridlinesRef.current = editGridlines;
+  const editedPlaced = editedPlacement !== undefined;
+  editedPlacedRef.current = editedPlaced;
   useEffect(() => {
     recolorHighlight();
-  }, [uiState.gridlinesBright, recolorHighlight]);
+  }, [editGridlines, editedPlaced, recolorHighlight]);
 
   useEffect(() => {
     render();
   }, [uiState.lightGridlines, render]);
+
+  useEffect(() => {
+    render();
+  }, [uiState.objectGridlines, render]);
 
   const editedLightLowpoly = uiState.maskEdit?.subject === "light" ? uiState.maskEdit.lowpoly : undefined;
   useEffect(() => {
@@ -1535,34 +1839,65 @@ export function ProjectMaskItem({
   const tracedRegions = useMemo((): ShapeOutline[] => {
     if (source.kind !== "static") return [];
     if (highlightSuppressed) return [];
+    const reviewed: ShapeOutline[] =
+      reviewShape && editedRegionKey && !uiState.maskEdit?.editingShape
+        ? [
+            {
+              id: editedRegionKey,
+              region: editedPlacement ? { ...reviewShape.current, ...editedPlacement.place } : reviewShape.current,
+              color: highlightCss(HIGHLIGHT_SELECTED_COLOR),
+            },
+          ]
+        : [];
     const selected = uiState.selectedElement?.key === mediaKey ? uiState.selectedElement : undefined;
-    if (!selected && !pickHover) return [];
+    if (!selected && !pickHover) return reviewed;
     const maskData = coreState.canvasMasks.get(mediaKey) ?? source.maskData;
     const selectedLightId = selected?.type === "light" ? selected.lightId : undefined;
     const selectedObjectId = selected?.type === "object" ? selected.objectId : undefined;
     const color = (isSelected: boolean) =>
       highlightCss(isSelected ? HIGHLIGHT_SELECTED_COLOR : HIGHLIGHT_SIBLING_COLOR);
-    return [
+    const regions: ShapeOutline[] = [
       ...maskData.lights.map((light) => ({
         id: `light:${light.id}`,
-        region: lightRegion(light, new Set(polygonIndicesForLight(maskData.polygons, light.id))),
+        region: drawnLightRegion(
+          light,
+          new Set(polygonIndicesForLight(maskData.polygons, light.id)),
+          animatedLightOffsets.get(light.id),
+        ),
         color: color(light.id === selectedLightId),
       })),
-      ...maskData.objects.map((object) => ({
-        id: `object:${object.id}`,
-        region: object,
-        color: color(object.id === selectedObjectId),
-      })),
-    ].filter(({ id }) => id !== editedRegionKey);
+      ...maskData.objects.map((object) => {
+        const offset = animatedObjectOffsets.get(object.id);
+        return {
+          id: `object:${object.id}`,
+          region: offset
+            ? {
+                ...object,
+                cx: object.cx + offset.dx,
+                cy: object.cy + offset.dy,
+                radius: object.radius * offset.scale,
+                transform: offset.transform,
+              }
+            : object,
+          color: color(object.id === selectedObjectId),
+        };
+      }),
+    ];
+    return [...regions.filter(({ id }) => id !== editedRegionKey), ...reviewed];
   }, [
     source,
     uiState.selectedElement,
+    uiState.maskEdit,
+    reviewShape,
+    editedPlacement,
     editedRegionKey,
     highlightSuppressed,
     pickHover,
     mediaKey,
     coreState.canvasMasks,
-    lightRegion,
+    drawnLightRegion,
+    animatedLightOffsets,
+    animatedObjectOffsets,
   ]);
 
   const meshIdentityKey = source.kind === "static" ? source.maskData.mask_media_id : source;
@@ -1704,6 +2039,10 @@ export function ProjectMaskItem({
         recolorHighlight();
 
         const handle: MaskImperativeHandle = {
+          animatedOffsetFor: (subject) =>
+            subject.type === "light"
+              ? animatedLightOffsetsRef.current.get(subject.id)
+              : animatedObjectOffsetsRef.current.get(subject.id),
           play: (effectKey, lightId, objectId) =>
             latestRef.current.playLightSourceAnimation(effectKey, lightId, objectId),
           preparePlayback: (effectKey, lightId, objectId) =>
@@ -1756,6 +2095,10 @@ export function ProjectMaskItem({
             recolorHighlight();
           },
           retouchObjectMesh: () => latestRef.current.retouchObjectMesh(),
+          setKeyframePreview: (preview) => {
+            keyframePreviewRef.current = preview;
+            renderRef.current();
+          },
           setPendingTopology: (edit) => {
             pendingTopologyRef.current = edit;
             scheduleRecolorHighlight();
@@ -2033,16 +2376,11 @@ export function ProjectMaskItem({
                 if (source.kind !== "static") return undefined;
                 const point = toBufferPoint(e.currentTarget, e.clientX, e.clientY);
                 if (!point) return undefined;
-                const objectId = objectIdAtPoint(objectsRef.current, point);
-                if (objectId !== undefined) return { key: mediaKey, type: "object", objectId };
-                const lightId = lightIdAtPoint(
-                  source.maskData.polygons,
-                  maskGeometryRef.current.points,
-                  resolveObjectUniforms(),
-                  point,
-                );
-                if (lightId !== undefined) return { key: mediaKey, type: "light", lightId };
-                return undefined;
+                const front = elementAtPoint(resolveHitScene(source.maskData), point);
+                if (!front) return undefined;
+                return front.kind === "object"
+                  ? { key: mediaKey, type: "object", objectId: front.id }
+                  : { key: mediaKey, type: "light", lightId: front.id };
               };
               const select = (selected: LaurusSelectedElement) => {
                 uiDispatch({ type: UIActionType.SetSelectedElement, value: selected });
@@ -2189,12 +2527,7 @@ export function ProjectMaskItem({
               const point = toBufferPoint(canvas, e.clientX, e.clientY);
               if (!point) return;
               const [bufferX, bufferY] = point;
-              const lightId = lightIdAtPoint(
-                source.maskData.polygons,
-                maskGeometryRef.current.points,
-                resolveObjectUniforms(),
-                [bufferX, bufferY],
-              );
+              const lightId = lightIdAtPoint(resolveHitScene(source.maskData), [bufferX, bufferY]);
               if (lightId === undefined) return;
               if (lightCommitInFlightRef.current.has(lightId)) return;
               const originalIndices = new Set<number>();
@@ -2367,8 +2700,9 @@ export function ProjectMaskItem({
           />
           {shapeEditorObject && (
             <ObjectShapeEditor
-              key={`${mediaKey}:${shapeEditorObject.current.id}:${shapeEditorObject.current.origin}`}
+              key={`${mediaKey}:${shapeEditorObject.current.id}:${shapeEditorObject.current.origin}:${editedPlacement?.seat ?? ""}`}
               object={shapeEditorObject.current}
+              place={editedPlacement?.place}
               reference={shapeEditorObject.original}
               bufferWidth={canvasSize.width}
               bufferHeight={canvasSize.height}
@@ -2380,7 +2714,7 @@ export function ProjectMaskItem({
               stitch={uiState.tool.type === "pen" && uiState.tool.stitch}
               addAnchor={uiState.tool.type === "pen" && uiState.tool.addAnchor}
               showAnchors={uiState.tool.type !== "pen" || uiState.tool.showAnchors}
-              gridlinesBright={uiState.gridlinesBright}
+              gridlines={editGridlines}
             />
           )}
           <ShapeOutlines
@@ -2403,6 +2737,7 @@ export function ProjectMaskItem({
             }
             framesCacheRef={framesCacheRef}
             transform={transform}
+            anchorOffset={selectedAnchorOffset}
           />
         )}
       </div>

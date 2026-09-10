@@ -446,7 +446,7 @@ export default function UnitDisplay({
             }}
           >
             <SvgRepo
-              title={"select previous"}
+              title={"previous"}
               svg={
                 findNavigableIndex(carouselIndex, -1) === undefined ? chevronLeft200("rgb(67,67,67)") : chevronLeft200()
               }
@@ -579,7 +579,7 @@ export default function UnitDisplay({
                     return (
                       <ObjectOrLightThumbnail
                         key={`${c.key}-light-${c.lightId}`}
-                        title="mesh light"
+                        title="light"
                         shape={editedShapePath(c) ?? (light?.shape || CIRCLE_SHAPE)}
                         sourceImgMediaId={maskData.source_img_media_id}
                         sizes={dynamicSizes.thumbnail}
@@ -601,7 +601,7 @@ export default function UnitDisplay({
                     return (
                       <ObjectOrLightThumbnail
                         key={`${c.key}-object-${c.objectId}`}
-                        title="mesh object"
+                        title="object"
                         shape={editedShapePath(c) ?? (object.shape || CIRCLE_SHAPE)}
                         sourceImgMediaId={maskData.source_img_media_id}
                         sizes={dynamicSizes.thumbnail}
@@ -626,7 +626,7 @@ export default function UnitDisplay({
             }}
           >
             <SvgRepo
-              title={"select next"}
+              title={"next"}
               svg={
                 findNavigableIndex(carouselIndex, 1) === undefined
                   ? chevronRight200("rgb(67,67,67)")

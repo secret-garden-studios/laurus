@@ -36,8 +36,10 @@ uniform vec3 u_glowColor;
 
 uniform float u_backingGrey;
 const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+const float HIGHLIGHT_SHADOW_MATCH = 0.01;
 
 uniform vec4 u_objectFills[MAX_MASK_OBJECTS];
+uniform float u_objectGridlines[MAX_MASK_OBJECTS];
 
 #include "object-lift.glsl"
 
@@ -78,6 +80,12 @@ void main() {
   float edge = 1.0 - min(min(edgeFactors.x, edgeFactors.y), edgeFactors.z);
   vec3 highlightFactors = smoothstep(vec3(0.0), baryDeriv * HIGHLIGHT_STROKE_WIDTH_PX, v_barycentric);
   float highlightEdge = 1.0 - min(min(highlightFactors.x, highlightFactors.y), highlightFactors.z);
+  vec3 shadowBary = v_barycentric
+    - dFdx(v_barycentric) * HIGHLIGHT_SHADOW_OFFSET_X_PX
+    + dFdy(v_barycentric) * HIGHLIGHT_SHADOW_OFFSET_Y_PX;
+  vec3 shadowFactors = smoothstep(
+    vec3(0.0), baryDeriv * (HIGHLIGHT_STROKE_WIDTH_PX + HIGHLIGHT_SHADOW_BLUR_PX), shadowBary);
+  float shadowEdge = 1.0 - min(min(shadowFactors.x, shadowFactors.y), shadowFactors.z);
 
   ObjectLift lift = objectLift(v_meshPos);
   vec4 mask = texture2D(u_mask, v_uv);
@@ -168,19 +176,31 @@ void main() {
     bumpShade = max(bumpShade, max(-bump, 0.0) * reach * BUMP_STRENGTH);
   }
 
+  for (int i = 0; i < MAX_MASK_OBJECTS; i++) {
+    if (i >= u_objectCount) break;
+    if (u_objectGridlines[i] <= 0.0) continue;
+    vec2 toPoint = v_meshPos - u_objects[i].xy;
+    float u = objectU(
+      u_objectShapeRows[i], u_objectShapeMaxDepth[i], toPoint, u_objects[i].z, u_objectRotations[i]).x;
+    gridlinesMix = max(gridlinesMix, u_objectGridlines[i] * (1.0 - step(1.0, u)));
+  }
+
   float shade = darkest * (1.0 - brightest);
 
   vec3 lit = mix(base, vec3(1.0), min(bestHighlight + bumpLit, 1.0));
   vec3 shaded = lit - shade - bumpShade;
   vec3 strokeColor = STROKE_COLOR - shade - bumpShade;
-  float strokeMix = max(u_textureMix, gridlinesMix);
-  vec3 withEdge = mix(shaded, strokeColor, edge * strokeMix * STROKE_ALPHA * beneath);
+  float strokeMix = max(u_textureMix * beneath, gridlinesMix);
+  vec3 withEdge = mix(shaded, strokeColor, edge * strokeMix * STROKE_ALPHA);
 
   float glowMix = mask.r * u_maskActive * beneath * (u_hasTexture > 0.5 ? 0.0 : 1.0);
   vec3 withGlow = mix(withEdge, u_glowColor, glowMix);
 
+  float shadowed = step(distance(v_highlight.rgb, HIGHLIGHT_SHADOWED_RGB), HIGHLIGHT_SHADOW_MATCH);
+  float lightShadow = shadowEdge * v_highlight.a * HIGHLIGHT_SHADOW_ALPHA * shadowed;
+  vec3 withHighlightShadow = mix(withGlow, HIGHLIGHT_SHADOW_COLOR, lightShadow);
   float lightEdge = highlightEdge * v_highlight.a;
-  vec3 withLightStroke = mix(withGlow, v_highlight.rgb, lightEdge);
+  vec3 withLightStroke = mix(withHighlightShadow, v_highlight.rgb, lightEdge);
 
   float luma = dot(withLightStroke, LUMA);
   vec3 greyed = mix(withLightStroke, vec3(luma * BACKING_GREY_LEVEL), u_backingGrey);

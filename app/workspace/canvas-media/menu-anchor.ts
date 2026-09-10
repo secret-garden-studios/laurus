@@ -11,6 +11,7 @@ export function maskSubElementCenter(
   meta: LaurusProjectMask,
   maskData: LaurusMaskResult | undefined,
   subject: MaskSubElement,
+  offset?: { dx: number; dy: number },
 ): Point2D | undefined {
   if (!maskData || maskData.width <= 0 || maskData.height <= 0) return undefined;
   let outline: { cx: number; cy: number } | undefined;
@@ -22,9 +23,11 @@ export function maskSubElementCenter(
     outline = object && objectOutline(maskData, object);
   }
   if (!outline) return undefined;
+  const cx = outline.cx + (offset?.dx ?? 0);
+  const cy = outline.cy + (offset?.dy ?? 0);
   return projectLocalPoint(meta, {
-    x: (outline.cx / maskData.width) * meta.width * meta.scale_x,
-    y: (outline.cy / maskData.height) * meta.height * meta.scale_y,
+    x: (cx / maskData.width) * meta.width * meta.scale_x,
+    y: (cy / maskData.height) * meta.height * meta.scale_y,
   });
 }
 

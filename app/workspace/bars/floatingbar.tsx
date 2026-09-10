@@ -8,8 +8,10 @@ import { Z_INDEX } from "../workspace.config";
 import { beginBodyDragCursor, endBodyDragCursor } from "../hooks/useToolCursor";
 import { ReviewPanel, EditPanel } from "../object-review-panel";
 import CopyPanel from "../copy-panel";
+import KeyframePanel from "../keyframe-panel";
 import { useObjectReview } from "../hooks/useObjectReview";
-import { UIActionType, editedRegion, isCopyArmed } from "../states/ui-state";
+import { UIActionType, editedRegion, isCopyArmed, isKeyframingArmed } from "../states/ui-state";
+import { placeShape } from "../mask-gl";
 
 export const FLOATINGBAR_DND_ID = "floatingbar";
 
@@ -34,7 +36,7 @@ const clamp = (value: number, low: number, high: number) => (high < low ? low : 
 
 export default function Floatingbar() {
   const { uiState, uiDispatch } = useContext(UIContext);
-  const { notifyMaskToolChanged } = useContext(MaskContext);
+  const { notifyMaskToolChanged, maskAnimatedOffset } = useContext(MaskContext);
   const { selectedImgKeys, selectedSvgKeys, selectedMaskKeys } = useContext(HoverContext);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
@@ -56,7 +58,9 @@ export default function Floatingbar() {
     const area = areaRef.current;
     const frame = frameRef.current;
     if (!area || !frame) return;
-    const target = regionOnScreen(session.maskKey, region.cx, region.cy, region.radius);
+    const offset = maskAnimatedOffset(session.maskKey, { type: session.subject, id: region.id });
+    const placed = offset ? placeShape(region, region, offset) : region;
+    const target = regionOnScreen(session.maskKey, placed.cx, placed.cy, placed.radius);
     if (!target) return;
     placedForRef.current = placementKey;
 
@@ -76,7 +80,7 @@ export default function Floatingbar() {
       x: previous.x + clamp(desiredX, minX, maxX) - frameRect.left,
       y: previous.y + clamp(desiredY, minY, maxY) - frameRect.top,
     }));
-  }, [placementKey, session, region]);
+  }, [placementKey, session, region, maskAnimatedOffset]);
 
   const closeCopy = () => {
     const tool = uiState.tool;
@@ -94,15 +98,19 @@ export default function Floatingbar() {
       }
       case "marquee":
       case "mask":
-      case "light_source":
-        return isCopyArmed(
-          uiState,
-          selectedImgKeys,
-          selectedSvgKeys,
-          selectedMaskKeys.size === 1 ? Array.from(selectedMaskKeys)[0] : undefined,
-        ) ? (
-          <CopyPanel onClose={closeCopy} />
-        ) : null;
+      case "light_source": {
+        if (
+          isCopyArmed(
+            uiState,
+            selectedImgKeys,
+            selectedSvgKeys,
+            selectedMaskKeys.size === 1 ? Array.from(selectedMaskKeys)[0] : undefined,
+          )
+        ) {
+          return <CopyPanel onClose={closeCopy} />;
+        }
+        return isKeyframingArmed(uiState) ? <KeyframePanel /> : null;
+      }
       default:
         return null;
     }

@@ -53,7 +53,7 @@ export default function EffectUnitbar({
 }: EffectUnitbar) {
   const { coreState, dispatch } = useContext(CoreContext);
   const { uiState } = useContext(UIContext);
-  const { isAltKeyPressed } = useContext(HoverContext);
+  const { isAltKeyPressed, setSelectedEffectUnitKeys } = useContext(HoverContext);
   const [isBarHovered, setIsBarHovered] = useState(false);
 
   const [dynamicSizes] = useState(() => {
@@ -91,49 +91,30 @@ export default function EffectUnitbar({
 
   const deleteEffect = useCallback(
     async (effect: LaurusEffect) => {
-      switch (effect.type) {
-        case "move": {
-          const deleted = await deleteMove(coreState.apiOrigin, coreState.accessToken, effect.value.move_id);
-          if (deleted) {
-            dispatch({ type: CoreActionType.DeleteEffect, key: effect.key });
-          }
-          break;
+      const deleted = await (() => {
+        switch (effect.type) {
+          case "move":
+            return deleteMove(coreState.apiOrigin, coreState.accessToken, effect.value.move_id);
+          case "rotate":
+            return deleteRotate(coreState.apiOrigin, coreState.accessToken, effect.value.rotate_id);
+          case "skew":
+            return deleteSkew(coreState.apiOrigin, coreState.accessToken, effect.value.skew_id);
+          case "scale":
+            return deleteScale(coreState.apiOrigin, coreState.accessToken, effect.value.scale_id);
+          case "light_source":
+            return deleteLightSource(coreState.apiOrigin, coreState.accessToken, effect.value.light_source_id);
         }
-        case "rotate": {
-          const deleted = await deleteRotate(coreState.apiOrigin, coreState.accessToken, effect.value.rotate_id);
-          if (deleted) {
-            dispatch({ type: CoreActionType.DeleteEffect, key: effect.key });
-          }
-          break;
-        }
-        case "skew": {
-          const deleted = await deleteSkew(coreState.apiOrigin, coreState.accessToken, effect.value.skew_id);
-          if (deleted) {
-            dispatch({ type: CoreActionType.DeleteEffect, key: effect.key });
-          }
-          break;
-        }
-        case "scale": {
-          const deleted = await deleteScale(coreState.apiOrigin, coreState.accessToken, effect.value.scale_id);
-          if (deleted) {
-            dispatch({ type: CoreActionType.DeleteEffect, key: effect.key });
-          }
-          break;
-        }
-        case "light_source": {
-          const deleted = await deleteLightSource(
-            coreState.apiOrigin,
-            coreState.accessToken,
-            effect.value.light_source_id,
-          );
-          if (deleted) {
-            dispatch({ type: CoreActionType.DeleteEffect, key: effect.key });
-          }
-          break;
-        }
-      }
+      })();
+      if (!deleted) return;
+      dispatch({ type: CoreActionType.DeleteEffect, key: effect.key });
+      setSelectedEffectUnitKeys((prev) => {
+        if (!prev.has(effect.key)) return prev;
+        const next = new Set(prev);
+        next.delete(effect.key);
+        return next;
+      });
     },
-    [coreState.accessToken, coreState.apiOrigin, dispatch],
+    [coreState.accessToken, coreState.apiOrigin, dispatch, setSelectedEffectUnitKeys],
   );
 
   return (
@@ -468,7 +449,7 @@ export default function EffectUnitbar({
         }}
       />
       {showUnitControls && (
-        <>
+        <div onClick={(e) => e.stopPropagation()} style={{ display: "grid" }}>
           <SvgRepo
             title={"delete"}
             svg={isAltKeyPressed && isBarHovered ? circle("rgb(220, 112, 112)") : circle("rgba(255, 255, 255, 0.05)")}
@@ -494,7 +475,7 @@ export default function EffectUnitbar({
               transition: "border-left 0.25s ease-out",
             }}
           />
-        </>
+        </div>
       )}
     </div>
   );

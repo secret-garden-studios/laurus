@@ -5,11 +5,14 @@ import { centroidOf } from "./mask-geometry.ts";
 import {
   dropIndicesClaimedByObjects,
   indicesInObjectFromCentroids,
+  elementAtPoint,
   lightIdAtPoint,
   polygonIndexAtPoint,
   swelledPolygonIndexAtPoint,
 } from "./light-geometry.ts";
 import type { LaurusPolygonPath } from "../workspace.server.ts";
+import type { MaskHitScene } from "./light-geometry.ts";
+import { frontToBackElements, maskStack } from "./mask-order.ts";
 import { cachedObjectShape, objectShapeDepthAt } from "./object-shape.ts";
 
 const CELL = 10;
@@ -81,50 +84,156 @@ function swelled(point: [number, number], object: Parameters<typeof objectSwellA
   return [point[0] + dx, point[1] + dy];
 }
 
-describe("lightIdAtPoint -- reading the light off the mesh as drawn", () => {
-  function halved(): { polygons: { light_id: number }[]; points: [number, number][][] } {
-    const { points } = grid();
-    const polygons = points.map((triangle) => ({
-      light_id: triangle.every(([x]) => x <= (COLS * CELL) / 2) ? 1 : 0,
-    }));
-    return { polygons, points };
-  }
+function scene(parts: Partial<MaskHitScene>): MaskHitScene {
+  return { objects: [], lights: [], ...parts };
+}
 
-  it("leaves the answer alone when no object bends the mesh", () => {
-    const { polygons, points } = halved();
-    const flat = { cx: 60, cy: 60, radius: 40, elevation: 0, falloff: 2, order: 1, shape: undefined, fill: undefined };
+const CRESCENT = "M0,-1L0.6,-0.8L0.25,-0.45L0.1,0L0.25,0.45L0.6,0.8L0,1L-0.71,0.71L-1,0L-0.71,-0.71Z";
 
-    assert.equal(lightIdAtPoint(polygons as never, points, [flat], [10, 60]), 1);
-    assert.equal(lightIdAtPoint(polygons as never, points, [], [10, 60]), 1);
-    assert.equal(lightIdAtPoint(polygons as never, points, [], [COLS * CELL - 5, 60]), undefined);
+function litObject(parts: {
+  id: number;
+  order: number;
+  cx?: number;
+  cy?: number;
+  radius?: number;
+  elevation?: number;
+}) {
+  return {
+    cx: 30,
+    cy: 60,
+    radius: 10,
+    elevation: 0,
+    falloff: 2,
+    shape: undefined,
+    fill: undefined,
+    ...parts,
+  };
+}
+
+function litLight(parts: {
+  id: number;
+  order: number;
+  cx?: number;
+  cy?: number;
+  radius?: number;
+  shape?: string;
+  transform?: [number, number, number, number];
+}) {
+  return { cx: 50, cy: 50, radius: 20, shape: "", ...parts };
+}
+
+describe("lightIdAtPoint -- the outline is the hit zone", () => {
+  it("answers inside the outline and nowhere else", () => {
+    const light = litLight({ id: 1, order: 1, cx: 50, cy: 50, radius: 20 });
+
+    assert.equal(lightIdAtPoint(scene({ lights: [light] }), [50, 50]), 1);
+    assert.equal(lightIdAtPoint(scene({ lights: [light] }), [65, 50]), 1);
+    assert.equal(lightIdAtPoint(scene({ lights: [light] }), [75, 50]), undefined);
+    assert.equal(
+      lightIdAtPoint(scene({ lights: [light] }), [66, 66]),
+      undefined,
+      "the corner of the outline's bounding box is outside the outline itself",
+    );
   });
 
-  it("stretches the light's bounds the way the shader stretched its triangles", () => {
-    const { polygons, points } = halved();
-    const raised = {
-      cx: 30,
-      cy: 60,
-      radius: 50,
-      elevation: 60,
-      falloff: 2,
-      order: 1,
-      shape: undefined,
-      fill: undefined,
-    };
+  it("leaves the bite out of a shaped light, which its bounds would swallow", () => {
+    const shaped = litLight({ id: 1, order: 1, cx: 100, cy: 100, radius: 60, shape: CRESCENT });
+    const round = { ...shaped, shape: "" };
+    const inTheBite: [number, number] = [140, 100];
 
-    const flatEdge = Math.max(
-      ...points.flatMap((triangle, i) => (polygons[i].light_id === 1 ? triangle.map(([x]) => x) : [])),
-    );
-    const drawnEdge = Math.max(
-      ...points.flatMap((triangle, i) =>
-        polygons[i].light_id === 1 ? triangle.map((corner) => corner[0] + objectSwellAt(corner, [raised])[0]) : [],
-      ),
-    );
-    assert.ok(drawnEdge > flatEdge, "the swell should have pushed the light's edge outwards");
+    assert.equal(lightIdAtPoint(scene({ lights: [round] }), inTheBite), 1);
+    assert.equal(lightIdAtPoint(scene({ lights: [shaped] }), inTheBite), undefined);
+    assert.equal(lightIdAtPoint(scene({ lights: [shaped] }), [70, 100]), 1);
+  });
 
-    const justPastFlatEdge: [number, number] = [(flatEdge + drawnEdge) / 2, 60];
-    assert.equal(lightIdAtPoint(polygons as never, points, [], justPastFlatEdge), undefined);
-    assert.equal(lightIdAtPoint(polygons as never, points, [raised], justPastFlatEdge), 1);
+  it("answers where the playhead put the outline, not where it rests", () => {
+    const resting = litLight({ id: 1, order: 1, cx: 50, cy: 50, radius: 20 });
+    const carried = { ...resting, cx: 110 };
+    const grown = { ...resting, radius: 60 };
+
+    assert.equal(lightIdAtPoint(scene({ lights: [resting] }), [110, 50]), undefined);
+    assert.equal(lightIdAtPoint(scene({ lights: [carried] }), [110, 50]), 1);
+    assert.equal(lightIdAtPoint(scene({ lights: [carried] }), [50, 50]), undefined);
+    assert.equal(lightIdAtPoint(scene({ lights: [grown] }), [100, 50]), 1);
+  });
+
+  it("shears the hit zone through the same matrix the outline is drawn with", () => {
+    const skewed = litLight({ id: 1, order: 1, cx: 50, cy: 50, radius: 20, transform: [1, 1, 0, 1] });
+    const upright = { ...skewed, transform: undefined };
+    const sheared: [number, number] = [34, 32];
+
+    assert.equal(lightIdAtPoint(scene({ lights: [upright] }), sheared), undefined);
+    assert.equal(lightIdAtPoint(scene({ lights: [skewed] }), sheared), 1);
+  });
+
+  it("is unhittable where it is not drawn", () => {
+    const collapsed = litLight({ id: 1, order: 1, radius: 0 });
+    const edgeOn = litLight({ id: 1, order: 1, transform: [1, 0, 0, 0] });
+
+    assert.equal(lightIdAtPoint(scene({ lights: [collapsed] }), [50, 50]), undefined);
+    assert.equal(lightIdAtPoint(scene({ lights: [edgeOn] }), [50, 50]), undefined);
+  });
+});
+
+describe("elementAtPoint -- the stack decides who the click belongs to", () => {
+  const inBoth: [number, number] = [50, 50];
+
+  it("leaves a nearby light alone when the click lands on the object", () => {
+    const object = litObject({ id: 7, order: 1, cx: 50, cy: 50, radius: 15 });
+    const light = litLight({ id: 1, order: 9, cx: 140, cy: 50, radius: 30 });
+    const both = scene({ objects: [object], lights: [light] });
+
+    assert.deepEqual(elementAtPoint(both, inBoth), { kind: "object", id: 7 });
+    assert.deepEqual(elementAtPoint(both, [140, 50]), { kind: "light", id: 1 });
+    assert.equal(elementAtPoint(both, [95, 50]), undefined, "the gap between them belongs to neither");
+  });
+
+  it("hands two overlapping lights to whichever is stacked in front", () => {
+    const front = (a: number, b: number) =>
+      elementAtPoint(
+        scene({
+          lights: [litLight({ id: 1, order: a }), litLight({ id: 2, order: b, cx: 60 })],
+        }),
+        inBoth,
+      );
+
+    assert.deepEqual(front(1, 2), { kind: "light", id: 2 });
+    assert.deepEqual(front(2, 1), { kind: "light", id: 1 });
+  });
+
+  it("hands two overlapping objects to whichever is stacked in front", () => {
+    const near = litObject({ id: 7, order: 1, cx: 50, cy: 50, radius: 12 });
+    const wide = litObject({ id: 8, order: 2, cx: 50, cy: 50, radius: 40 });
+
+    assert.deepEqual(elementAtPoint(scene({ objects: [near, wide] }), inBoth), { kind: "object", id: 8 });
+    assert.deepEqual(
+      elementAtPoint(scene({ objects: [{ ...near, order: 3 }, wide] }), inBoth),
+      { kind: "object", id: 7 },
+      "the tighter object no longer wins on size alone -- the stack decides",
+    );
+  });
+
+  it("settles an object over a light the same way", () => {
+    const object = litObject({ id: 7, order: 1, cx: 50, cy: 50, radius: 20 });
+    const lit = (order: number) => scene({ objects: [object], lights: [litLight({ id: 1, order })] });
+
+    assert.deepEqual(elementAtPoint(lit(2), inBoth), { kind: "light", id: 1 });
+    assert.deepEqual(elementAtPoint(lit(-1), inBoth), { kind: "object", id: 7 });
+  });
+
+  it("picks the row the media group browser lists first", () => {
+    const objects = [
+      litObject({ id: 7, order: 1, cx: 50, cy: 50, radius: 20 }),
+      litObject({ id: 8, order: 4, cx: 50, cy: 50, radius: 30 }),
+    ];
+    const lights = [litLight({ id: 1, order: 3 }), litLight({ id: 2, order: 2 })];
+    const [top] = frontToBackElements(maskStack({ objects, lights }));
+
+    assert.deepEqual(elementAtPoint(scene({ objects, lights }), inBoth), { kind: top.kind, id: top.id });
+  });
+
+  it("finds nothing where neither a light nor an object was drawn", () => {
+    assert.equal(elementAtPoint(scene({ lights: [litLight({ id: 1, order: 1 })] }), [200, 200]), undefined);
   });
 });
 
@@ -132,16 +241,10 @@ describe("indicesInObjectFromCentroids -- the outline decides membership", () =>
   const centroids: [number, number][] = [];
   for (let y = 0; y <= 200; y += 4) for (let x = 0; x <= 200; x += 4) centroids.push([x, y]);
 
-  // a crescent: a disc with a bite taken out of the +x side, normalized the
-  // way a stored shape is
-  const CRESCENT = "M0,-1L0.6,-0.8L0.25,-0.45L0.1,0L0.25,0.45L0.6,0.8L0,1" + "L-0.71,0.71L-1,0L-0.71,-0.71Z";
-
   it("takes every triangle the outline encloses and no other", () => {
     const object = { cx: 100, cy: 100, radius: 60, shape: CRESCENT };
     const inside = indicesInObjectFromCentroids(centroids, object);
 
-    // the invariant that makes the shape editor's snap meaningful: membership
-    // is a function of the outline, so it must agree with the outline
     const shape = cachedObjectShape(CRESCENT);
     assert.ok(shape);
     centroids.forEach((centroid, i) => {
@@ -150,8 +253,7 @@ describe("indicesInObjectFromCentroids -- the outline decides membership", () =>
         (centroid[0] - object.cx) / object.radius,
         (centroid[1] - object.cy) / object.radius,
       );
-      // a texel of slack either side of the boundary, where the rasterized
-      // field and the bilinear read of it can legitimately disagree
+
       if (Math.abs(depth) < 0.02) return;
       assert.equal(inside.has(i), depth > 0, `centroid ${centroid} at depth ${depth.toFixed(4)}`);
     });
@@ -165,7 +267,6 @@ describe("indicesInObjectFromCentroids -- the outline decides membership", () =>
   });
 
   it("follows the outline when it is reshaped, rather than staying put", () => {
-    // what the shape editor relies on: a different outline is a different set
     const before = indicesInObjectFromCentroids(centroids, {
       cx: 100,
       cy: 100,
@@ -235,9 +336,6 @@ describe("dropIndicesClaimedByObjects -- the object already there wins", () => {
   });
 
   it("keeps a reshaped object's own triangles while it loses the neighbour's", () => {
-    // what the pen sees: object 2 already sits to the right of object 1, and
-    // an anchor is dragged out over it. It keeps everything it already had and
-    // gives up everything object 1 holds.
     const ownedByTwo = new Set([...right].filter((i) => !left.has(i)));
     assert.ok(ownedByTwo.size > 0 && left.size > 0, "the fixture must tag both");
     const polygons = geometry.points.map((_, i) => ({
