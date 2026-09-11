@@ -21,8 +21,9 @@ function getScreenResolution(): LaurusResolution {
 interface LandingBoot {
   laurusApi: string | undefined;
   resetPassword: string | undefined;
+  setPassword: string | undefined;
 }
-export default function LandingBoot({ laurusApi, resetPassword }: LandingBoot) {
+export default function LandingBoot({ laurusApi, resetPassword, setPassword }: LandingBoot) {
   const [resolution, setResolution] = useState<LaurusResolution | undefined>(undefined);
   const [formType, setFormType] = useState<LandingFormType | undefined>(undefined);
 
@@ -32,7 +33,9 @@ export default function LandingBoot({ laurusApi, resetPassword }: LandingBoot) {
         setResolution(getScreenResolution());
       }
       try {
-        if (resetPassword) {
+        if (setPassword) {
+          setFormType(LandingFormType.passwordSetup);
+        } else if (resetPassword) {
           setFormType(LandingFormType.passwordConfirmation);
         } else {
           setFormType(LandingFormType.login);
@@ -41,10 +44,16 @@ export default function LandingBoot({ laurusApi, resetPassword }: LandingBoot) {
         setFormType(LandingFormType.login);
       }
     })();
-  }, [resetPassword, resolution]);
+  }, [resetPassword, setPassword, resolution]);
 
   return resolution !== undefined && formType !== undefined ? (
-    <Landing laurusApi={laurusApi} resolution={resolution} resetPasswordToken={resetPassword} formInit={formType} />
+    <Landing
+      laurusApi={laurusApi}
+      resolution={resolution}
+      resetPasswordToken={resetPassword}
+      setPasswordToken={setPassword}
+      formInit={formType}
+    />
   ) : (
     <Skeleton />
   );

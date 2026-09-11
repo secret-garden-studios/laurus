@@ -4,7 +4,9 @@ const VISITOR_KEY = "laurus_visitor_id";
 const SESSION_KEY = "laurus_session_id";
 
 export const PAGE_VIEW = "page_view";
-export const SIGN_UP = "sign_up";
+export const FULL_ACCESS_CLICK = "full_access_click";
+export const ACCOUNT_REQUEST = "account_request";
+export const ACCOUNT_ACTIVATED = "account_activated";
 
 export interface AnalyticsEvent_V1_0 {
   event_id: string;

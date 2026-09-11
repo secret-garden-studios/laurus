@@ -25,12 +25,19 @@ export interface AnalyticsTotals_V1_0 {
   returning_visitors: number;
   sessions: number;
   page_views: number;
-  signups: number;
+  claimed: number;
+  approved: number;
+  activated: number;
+  full_access_clicks: number;
+  account_requests: number;
   bounced_sessions: number;
   bounce_rate: number;
   avg_session_seconds: number;
   views_per_session: number;
-  signup_rate: number;
+  approval_rate: number;
+  activation_rate: number;
+  full_access_rate: number;
+  request_conversion_rate: number;
 }
 export interface AnalyticsActive_V1_0 {
   dau: number;
@@ -44,7 +51,11 @@ export interface AnalyticsSeriesPoint_V1_0 {
   returning_visitors: number;
   sessions: number;
   page_views: number;
-  signups: number;
+  claimed: number;
+  approved: number;
+  activated: number;
+  full_access_clicks: number;
+  account_requests: number;
 }
 export interface AnalyticsOverview_V1_0 {
   range: AnalyticsRange_V1_0;
@@ -97,7 +108,9 @@ export interface AnalyticsUserTotals_V1_0 {
   new_users: number;
   identified_visitors: number;
   unique_visitors: number;
-  visitor_to_signup_rate: number;
+  pending_approval: number;
+  pending_activation: number;
+  activated_users: number;
 }
 export interface AnalyticsActiveUser_V1_0 {
   username: string;
@@ -119,11 +132,62 @@ export interface AnalyticsUsersReport_V1_0 {
   recent_signups: AnalyticsSignup_V1_0[];
 }
 
+export const REQUESTED = "requested";
+export const AWAITING_PASSWORD = "awaiting_password";
+export const READ_ONLY = "read_only";
+export const ACTIVE = "active";
+
+export const ROLE_READ = "read";
+export const ROLE_READ_WRITE = "read_write";
+export const ROLE_ADMIN = "admin";
+export const ROLE_OPTIONS = [ROLE_READ, ROLE_READ_WRITE, ROLE_ADMIN] as const;
+
+export const ROLE_LABELS: Record<string, string> = {
+  [ROLE_READ]: "read only",
+  [ROLE_READ_WRITE]: "full access",
+  [ROLE_ADMIN]: "admin",
+};
+
+export interface ManagedAccount_V1_0 {
+  username: string;
+  email: string;
+  role: string;
+  requested_at: string | null;
+  approved_at: string | null;
+  activated: boolean;
+  state: string;
+}
+export interface ManagedAccounts_V1_0 {
+  accounts: ManagedAccount_V1_0[];
+}
+export interface SetAccountRoleResult_V1_0 {
+  success: boolean;
+  message: string;
+  username: string;
+  role: string;
+  email: string | null;
+  email_sent: boolean;
+}
+export interface ApproveAccountResult_V1_0 {
+  success: boolean;
+  message: string;
+  username: string;
+  email: string | null;
+  email_sent: boolean;
+}
+export interface EmailCheckResult_V1_0 {
+  success: boolean;
+  transport: string;
+  sent_to: string | null;
+  message: string;
+}
+
 export interface MetricsDependencies {
   overview: AnalyticsOverview_V1_0 | undefined;
   retention: AnalyticsRetention_V1_0 | undefined;
   breakdowns: AnalyticsBreakdowns_V1_0 | undefined;
   users: AnalyticsUsersReport_V1_0 | undefined;
+  accounts: ManagedAccounts_V1_0 | undefined;
 }
 
 export const RANGE_OPTIONS = [7, 30, 90] as const;
@@ -199,16 +263,85 @@ export async function getUsersReport(
   );
 }
 
+export async function getAccounts(
+  baseUrl: string | undefined,
+  accessToken: string | undefined,
+): Promise<ManagedAccounts_V1_0 | undefined> {
+  return getJson<ManagedAccounts_V1_0>(baseUrl, accessToken, `${baseUrl}/accounts`);
+}
+
+async function postJson<T>(
+  baseUrl: string | undefined,
+  accessToken: string | undefined,
+  url: string,
+  body: string | undefined,
+): Promise<T | undefined> {
+  try {
+    let response: Response | undefined = undefined;
+    const authResponse = await authFetch(baseUrl, accessToken, body, url, "POST");
+    if (authResponse.newToken) {
+      const authResponse2 = await authFetch(baseUrl, authResponse.newToken, body, url, "POST");
+      response = authResponse2.response;
+    } else {
+      response = authResponse.response;
+    }
+    if (!response.ok) {
+      onNotOk(response.status);
+      return undefined;
+    }
+    const result: T = await response.json();
+    return result;
+  } catch (error) {
+    console.log({ error });
+    return undefined;
+  }
+}
+
+export async function approveAccount(
+  baseUrl: string | undefined,
+  accessToken: string | undefined,
+  username: string,
+): Promise<ApproveAccountResult_V1_0 | undefined> {
+  return postJson<ApproveAccountResult_V1_0>(
+    baseUrl,
+    accessToken,
+    `${baseUrl}/accounts/approve`,
+    JSON.stringify({ username }),
+  );
+}
+
+export async function setAccountRole(
+  baseUrl: string | undefined,
+  accessToken: string | undefined,
+  username: string,
+  role: string,
+): Promise<SetAccountRoleResult_V1_0 | undefined> {
+  return postJson<SetAccountRoleResult_V1_0>(
+    baseUrl,
+    accessToken,
+    `${baseUrl}/accounts/role`,
+    JSON.stringify({ username, role }),
+  );
+}
+
+export async function checkEmailDelivery(
+  baseUrl: string | undefined,
+  accessToken: string | undefined,
+): Promise<EmailCheckResult_V1_0 | undefined> {
+  return postJson<EmailCheckResult_V1_0>(baseUrl, accessToken, `${baseUrl}/accounts/email-check`, undefined);
+}
+
 export async function getMetrics(
   baseUrl: string | undefined,
   accessToken: string | undefined,
   days: number,
 ): Promise<MetricsDependencies> {
-  const [overview, retention, breakdowns, users] = await Promise.all([
+  const [overview, retention, breakdowns, users, accounts] = await Promise.all([
     getOverview(baseUrl, accessToken, days),
     getRetention(baseUrl, accessToken, RETENTION_WEEKS),
     getBreakdowns(baseUrl, accessToken, days, BREAKDOWN_LIMIT),
     getUsersReport(baseUrl, accessToken, days, BREAKDOWN_LIMIT),
+    getAccounts(baseUrl, accessToken),
   ]);
-  return { overview, retention, breakdowns, users };
+  return { overview, retention, breakdowns, users, accounts };
 }

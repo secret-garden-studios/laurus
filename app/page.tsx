@@ -148,12 +148,16 @@ export async function fetchProject(
   }
 }
 
-export default async function Home({ searchParams }: { searchParams: Promise<{ reset_password?: string }> }) {
-  const { reset_password } = await searchParams;
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ reset_password?: string; set_password?: string }>;
+}) {
+  const { reset_password, set_password } = await searchParams;
   const laurusApi = process.env.LAURUS_API;
   return (
     <>
-      <LandingBoot laurusApi={laurusApi} resetPassword={reset_password} />
+      <LandingBoot laurusApi={laurusApi} resetPassword={reset_password} setPassword={set_password} />
     </>
   );
 }

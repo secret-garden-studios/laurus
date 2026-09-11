@@ -10,12 +10,18 @@ import {
   Register_V1_0,
   resetPassword,
   resetPasswordConfirm,
+  setPassword as saveNewPassword,
   EMAIL_ERROR,
   USERNAME_ERROR,
   UNAUTHORIZED_ERROR,
+  AWAITING_APPROVAL_ERROR,
   LANDING_ERROR,
+  TOO_MANY_ERROR,
+  PASSWORD_LENGTH_ERROR,
+  MIN_PASSWORD_LENGTH,
   LaurusResetPassword,
 } from "./landing.server";
+import { ACCOUNT_ACTIVATED, ACCOUNT_REQUEST, FULL_ACCESS_CLICK, track } from "./analytics/analytics.client";
 import { useRouter } from "next/navigation";
 
 export enum LandingFormType {
@@ -23,6 +29,7 @@ export enum LandingFormType {
   registration,
   passwordReset,
   passwordConfirmation,
+  passwordSetup,
   none,
 }
 
@@ -54,9 +61,10 @@ interface Landing {
   laurusApi: string | undefined;
   resolution: LaurusResolution;
   resetPasswordToken: string | undefined;
+  setPasswordToken: string | undefined;
   formInit: LandingFormType;
 }
-export default function Landing({ laurusApi, resolution, resetPasswordToken, formInit }: Landing) {
+export default function Landing({ laurusApi, resolution, resetPasswordToken, setPasswordToken, formInit }: Landing) {
   const [formType, setFormType] = useState<LandingFormType>(formInit);
   const [newUsername, setNewUsername] = useState("");
   const vhPercentage = useMemo<number>(() => {
@@ -64,6 +72,7 @@ export default function Landing({ laurusApi, resolution, resetPasswordToken, for
       case "high": {
         switch (formType) {
           case LandingFormType.passwordConfirmation:
+          case LandingFormType.passwordSetup:
             return 35;
           case LandingFormType.login:
           case LandingFormType.registration:
@@ -75,6 +84,7 @@ export default function Landing({ laurusApi, resolution, resetPasswordToken, for
       case "midhigh": {
         switch (formType) {
           case LandingFormType.passwordConfirmation:
+          case LandingFormType.passwordSetup:
             return 33;
           case LandingFormType.login:
           case LandingFormType.registration:
@@ -86,6 +96,7 @@ export default function Landing({ laurusApi, resolution, resetPasswordToken, for
       case "midlow": {
         switch (formType) {
           case LandingFormType.passwordConfirmation:
+          case LandingFormType.passwordSetup:
           case LandingFormType.login:
           case LandingFormType.registration:
           case LandingFormType.passwordReset:
@@ -155,7 +166,23 @@ export default function Landing({ laurusApi, resolution, resetPasswordToken, for
                 return (
                   <>
                     <PasswordConfirmationBody
-                      resetPasswordToken={resetPasswordToken}
+                      token={resetPasswordToken}
+                      mode="reset"
+                      laurusApi={laurusApi}
+                      resolution={resolution}
+                      onNewFormType={(form) => {
+                        setNewUsername("");
+                        setFormType(form);
+                      }}
+                    />
+                  </>
+                );
+              case LandingFormType.passwordSetup:
+                return (
+                  <>
+                    <PasswordConfirmationBody
+                      token={setPasswordToken}
+                      mode="setup"
                       laurusApi={laurusApi}
                       resolution={resolution}
                       onNewFormType={(form) => {
@@ -185,6 +212,7 @@ export default function Landing({ laurusApi, resolution, resetPasswordToken, for
             <>
               <div
                 onClick={() => {
+                  void track(laurusApi, FULL_ACCESS_CLICK, window.location.pathname);
                   setNewUsername("");
                   setFormType(LandingFormType.registration);
                 }}
@@ -741,7 +769,13 @@ function LoginBody({ laurusApi, resolution, newUsername }: LoginBody) {
             }
             const loginResult = await login(laurusApi, username, password);
             if (!loginResult.success) {
-              setMsg(loginResult.message == UNAUTHORIZED_ERROR ? "try different credentials" : LANDING_ERROR);
+              setMsg(
+                loginResult.message == UNAUTHORIZED_ERROR
+                  ? "try different credentials"
+                  : loginResult.message == AWAITING_APPROVAL_ERROR || loginResult.message == TOO_MANY_ERROR
+                    ? loginResult.message
+                    : LANDING_ERROR,
+              );
               buttonBorderRef.current = ButtonBorderColor.red;
               setButtonBorder(ButtonBorderColor.red);
               return;
@@ -841,8 +875,6 @@ interface RegistrationBody {
 }
 function RegistrationBody({ laurusApi, resolution, onNewFormType, onNewUsername }: RegistrationBody) {
   const [username, setUsername] = useState<string>("");
-  const [password, setPassword] = useState<string>("");
-  const [showPassword, setShowPassword] = useState<boolean>(false);
   const [email, setEmail] = useState<string>("");
   const [msg, setMsg] = useState<string>("");
   const buttonBorderRef = useRef<ButtonBorderColor>(ButtonBorderColor.primary);
@@ -898,7 +930,7 @@ function RegistrationBody({ laurusApi, resolution, onNewFormType, onNewUsername 
           <input
             className={dellaRespira.className}
             id="register-username"
-            placeholder="new username"
+            placeholder="your new username"
             autoComplete="username"
             type="text"
             value={username}
@@ -922,7 +954,7 @@ function RegistrationBody({ laurusApi, resolution, onNewFormType, onNewUsername 
           <input
             className={dellaRespira.className}
             id="register-email"
-            placeholder="new email"
+            placeholder="email"
             type="email"
             autoComplete="email"
             value={email}
@@ -943,73 +975,6 @@ function RegistrationBody({ laurusApi, resolution, onNewFormType, onNewUsername 
             }}
             required
           />
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-            <div
-              style={{
-                position: "relative",
-                display: "flex",
-                alignItems: "center",
-              }}
-            >
-              <input
-                className={dellaRespira.className}
-                id="register-password-input"
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => {
-                  setPassword(e.target.value);
-                  setMsg("");
-                  buttonBorderRef.current = ButtonBorderColor.primary;
-                  setButtonBorder(ButtonBorderColor.primary);
-                }}
-                placeholder="new password"
-                style={{
-                  ...dynamicSizes.input,
-                  borderRadius: 10,
-                  border: "1px solid rgba(255, 255, 255, 0.1)",
-                  background: "rgb(25, 25, 25)",
-                  boxSizing: "border-box",
-                  outline: "none",
-                  width: "100%",
-                }}
-                autoComplete="new-password"
-                required
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  setShowPassword(!showPassword);
-                }}
-                style={{
-                  position: "absolute",
-                  right: "8px",
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                }}
-              >
-                {showPassword ? (
-                  <SvgRepo
-                    svg={visibility("rgba(67,67,67,1)")}
-                    containerStyle={{
-                      width: 20,
-                      height: 20,
-                    }}
-                    scale={1}
-                  />
-                ) : (
-                  <SvgRepo
-                    svg={visibilityOff("rgba(67,67,67,1)")}
-                    containerStyle={{
-                      width: 20,
-                      height: 20,
-                    }}
-                    scale={1}
-                  />
-                )}
-              </button>
-            </div>
-          </div>
           <div
             className={
               dellaRespira.className +
@@ -1032,20 +997,14 @@ function RegistrationBody({ laurusApi, resolution, onNewFormType, onNewUsername 
                 setButtonBorder(ButtonBorderColor.red);
                 return;
               }
-              if (!password) {
-                setMsg("provide a password");
-                buttonBorderRef.current = ButtonBorderColor.red;
-                setButtonBorder(ButtonBorderColor.red);
-                return;
-              }
               const confirmed = window.confirm(
-                "Gaining full access to Laurus this early in the project is subject to further approval. Your username will be claimed, but until we send you an email approving full access, you will not be able to make any animations. Are you sure you want to continue?",
+                "Gaining full access to Laurus is subject to further approval. Your username will be claimed now, but you will not be able to make any animations until we approve you. Are you sure you want to continue?",
               );
               if (confirmed) {
+                void track(laurusApi, ACCOUNT_REQUEST, window.location.pathname);
                 const register: Register_V1_0 = {
                   username,
                   email,
-                  password,
                 };
                 buttonBorderRef.current = ButtonBorderColor.white;
                 setButtonBorder(ButtonBorderColor.white);
@@ -1054,7 +1013,9 @@ function RegistrationBody({ laurusApi, resolution, onNewFormType, onNewUsername 
                 if (!registerResult.success) {
                   buttonBorderRef.current = ButtonBorderColor.red;
                   const newMsg =
-                    registerResult.message == EMAIL_ERROR || registerResult.message == USERNAME_ERROR
+                    registerResult.message == EMAIL_ERROR ||
+                    registerResult.message == USERNAME_ERROR ||
+                    registerResult.message == TOO_MANY_ERROR
                       ? registerResult.message
                       : LANDING_ERROR;
                   setMsg(newMsg);
@@ -1159,6 +1120,7 @@ interface PasswordResetBody {
   onNewFormType: (newFormType: LandingFormType) => void;
 }
 function PasswordResetBody({ laurusApi, resolution, onNewFormType }: PasswordResetBody) {
+  const [username, setUsername] = useState<string>("");
   const [email, setEmail] = useState<string>("");
   const [msg, setMsg] = useState<string>("");
   const buttonBorderRef = useRef<ButtonBorderColor>(ButtonBorderColor.primary);
@@ -1242,6 +1204,32 @@ function PasswordResetBody({ laurusApi, resolution, onNewFormType }: PasswordRes
         <div style={{ display: "grid", gap: 12 }}>
           <input
             className={dellaRespira.className}
+            id="reset-password-username"
+            placeholder="username"
+            type="text"
+            autoComplete="username"
+            value={username}
+            onChange={(v) => {
+              buttonBorderRef.current = ButtonBorderColor.primary;
+              setUsername(v.currentTarget.value);
+              setMsg("");
+              setButtonBorder(ButtonBorderColor.primary);
+              setTimeLeft(0);
+              setIsRunning(false);
+            }}
+            style={{
+              ...dynamicSizes.input,
+              width: "100%",
+              borderRadius: 10,
+              border: "1px solid rgba(255, 255, 255, 0.1)",
+              background: "rgb(25, 25, 25)",
+              boxSizing: "border-box",
+              outline: "none",
+            }}
+            required
+          />
+          <input
+            className={dellaRespira.className}
             id="reset-password-email"
             placeholder="email"
             type="email"
@@ -1276,6 +1264,12 @@ function PasswordResetBody({ laurusApi, resolution, onNewFormType }: PasswordRes
             }
             onClick={async () => {
               if (isRunning) return;
+              if (!username) {
+                buttonBorderRef.current = ButtonBorderColor.red;
+                setMsg("provide a username");
+                setButtonBorder(ButtonBorderColor.red);
+                return;
+              }
               if (!email) {
                 buttonBorderRef.current = ButtonBorderColor.red;
                 setMsg("provide an email");
@@ -1283,7 +1277,7 @@ function PasswordResetBody({ laurusApi, resolution, onNewFormType }: PasswordRes
                 return;
               }
               const laurusUser: LaurusResetPassword = {
-                username: "",
+                username,
                 email,
               };
               const response = await resetPassword(laurusApi, laurusUser);
@@ -1383,19 +1377,16 @@ function PasswordResetBody({ laurusApi, resolution, onNewFormType }: PasswordRes
 }
 
 interface PasswordConfirmationBody {
-  resetPasswordToken: string | undefined;
+  token: string | undefined;
+  mode: "reset" | "setup";
   laurusApi: string | undefined;
   resolution: LaurusResolution;
   onNewFormType: (newFormType: LandingFormType) => void;
 }
-function PasswordConfirmationBody({
-  resetPasswordToken,
-  laurusApi,
-  resolution,
-  onNewFormType,
-}: PasswordConfirmationBody) {
+function PasswordConfirmationBody({ token, mode, laurusApi, resolution, onNewFormType }: PasswordConfirmationBody) {
   const router = useRouter();
   const [password, setPassword] = useState<string>("");
+  const [showPassword, setShowPassword] = useState<boolean>(false);
   const [msg, setMsg] = useState<string>("");
   const buttonBorderRef = useRef<ButtonBorderColor>(ButtonBorderColor.primary);
   const [buttonBorder, setButtonBorder] = useState<ButtonBorderColor>(ButtonBorderColor.primary);
@@ -1447,34 +1438,78 @@ function PasswordConfirmationBody({
           </div>
         </div>
         <div style={{ display: "grid", gap: 12 }}>
-          <input
-            className={dellaRespira.className}
-            id="passwordConfirmation-password"
-            placeholder="new password"
-            type="password"
-            autoComplete="new-password"
-            value={password}
-            onChange={(v) => {
-              setPassword(v.currentTarget.value);
-              setMsg("");
-              buttonBorderRef.current = ButtonBorderColor.primary;
-              setButtonBorder(ButtonBorderColor.primary);
-            }}
-            style={{
-              ...dynamicSizes.input,
-              width: "100%",
-              borderRadius: 10,
-              border: "1px solid rgba(255, 255, 255, 0.1)",
-              background: "rgb(25, 25, 25)",
-              boxSizing: "border-box",
-              outline: "none",
-            }}
-            required
-          />
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            <div
+              style={{
+                position: "relative",
+                display: "flex",
+                alignItems: "center",
+              }}
+            >
+              <input
+                className={dellaRespira.className}
+                id="passwordConfirmation-password"
+                placeholder="new password"
+                type={showPassword ? "text" : "password"}
+                autoComplete="new-password"
+                value={password}
+                onChange={(v) => {
+                  setPassword(v.currentTarget.value);
+                  setMsg("");
+                  buttonBorderRef.current = ButtonBorderColor.primary;
+                  setButtonBorder(ButtonBorderColor.primary);
+                }}
+                style={{
+                  ...dynamicSizes.input,
+                  width: "100%",
+                  borderRadius: 10,
+                  border: "1px solid rgba(255, 255, 255, 0.1)",
+                  background: "rgb(25, 25, 25)",
+                  boxSizing: "border-box",
+                  outline: "none",
+                }}
+                required
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPassword(!showPassword);
+                }}
+                style={{
+                  position: "absolute",
+                  right: "8px",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                }}
+              >
+                {showPassword ? (
+                  <SvgRepo
+                    svg={visibility("rgba(67,67,67,1)")}
+                    containerStyle={{
+                      width: 20,
+                      height: 20,
+                    }}
+                    scale={1}
+                  />
+                ) : (
+                  <SvgRepo
+                    svg={visibilityOff("rgba(67,67,67,1)")}
+                    containerStyle={{
+                      width: 20,
+                      height: 20,
+                    }}
+                    scale={1}
+                  />
+                )}
+              </button>
+            </div>
+          </div>
           <div
             className={dellaRespira.className + " " + styles["glowing-border"] + " " + styles["animated-button-dark"]}
             onClick={async () => {
-              if (!resetPasswordToken) {
+              if (buttonBorder == ButtonBorderColor.white) return;
+              if (!token) {
                 setMsg(LANDING_ERROR);
                 buttonBorderRef.current = ButtonBorderColor.red;
                 setButtonBorder(ButtonBorderColor.red);
@@ -1487,12 +1522,27 @@ function PasswordConfirmationBody({
                 setButtonBorder(ButtonBorderColor.red);
                 return;
               }
+              if (password.length < MIN_PASSWORD_LENGTH) {
+                setMsg(PASSWORD_LENGTH_ERROR);
+                buttonBorderRef.current = ButtonBorderColor.red;
+                setButtonBorder(ButtonBorderColor.red);
+                return;
+              }
               const newPassword = {
-                token: resetPasswordToken,
+                token,
                 new_password: password,
               };
-              const response = await resetPasswordConfirm(laurusApi, newPassword);
+              buttonBorderRef.current = ButtonBorderColor.white;
+              setButtonBorder(ButtonBorderColor.white);
+              setMsg("wait a sec");
+              const response =
+                mode == "setup"
+                  ? await saveNewPassword(laurusApi, newPassword)
+                  : await resetPasswordConfirm(laurusApi, newPassword);
               if (response) {
+                if (mode == "setup") {
+                  void track(laurusApi, ACCOUNT_ACTIVATED, window.location.pathname);
+                }
                 setMsg("login with new password");
                 buttonBorderRef.current = ButtonBorderColor.primary;
                 setButtonBorder(ButtonBorderColor.primary);
@@ -1513,14 +1563,14 @@ function PasswordConfirmationBody({
                 width: "100%",
                 fontSize: 13,
                 placeContent: "center",
-                cursor: "pointer",
+                cursor: buttonBorder == ButtonBorderColor.white ? "progress" : "pointer",
                 "--color-primary": buttonBorderRecord[buttonBorder].p,
                 "--color-secondary": buttonBorderRecord[buttonBorder].s,
                 "--color-tertiary": buttonBorderRecord[buttonBorder].t,
               } as React.CSSProperties
             }
           >
-            {msg ? msg : "save new password"}
+            {msg ? msg : "save password"}
           </div>
           <div
             style={{

@@ -56,13 +56,7 @@ function MetricsWithDependencies({
   const metrics = use(metricsPromise);
 
   if (me.me?.role !== "admin") {
-    return (
-      <Notice
-        resolution={resolution}
-        heading="not for you"
-        body={me.me ? "You shouldn't be on this page!" : "You need to be logged in to do that!"}
-      />
-    );
+    return <Notice resolution={resolution} heading="401" body={"access denied"} />;
   }
 
   return <Metrics apiOrigin={laurusApi} me={me} resolution={resolution} metrics={metrics} />;
@@ -121,7 +115,10 @@ function Notice({ resolution, heading, body }: Notice) {
           gap: dynamicSizes.stack.gap,
         }}
       >
-        <p className={italiana.className} style={{ fontSize: dynamicSizes.heading.fontSize, textAlign: "center" }}>
+        <p
+          className={italiana.className}
+          style={{ fontSize: dynamicSizes.heading.fontSize, textAlign: "center", fontWeight: "bolder" }}
+        >
           {heading}
         </p>
         <div style={{ fontSize: dynamicSizes.body.fontSize, textAlign: "center" }}>{body}</div>
