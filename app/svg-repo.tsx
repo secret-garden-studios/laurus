@@ -2578,6 +2578,25 @@ export function stat0200(
   };
 }
 
+export function finance200(
+  fill: string = "rgba(227, 227, 227, 1)",
+  width: number = 24,
+  height: number = 24,
+): LaurusClientSvg {
+  return {
+    media_key: "/material-ui/thin/finance_24dp_E3E3E3_FILL0_wght200_GRAD0_opsz24.svg",
+    width,
+    height,
+    viewbox: "0 -960 960 960",
+    fill,
+    stroke: "none",
+    stroke_width: 0,
+    markup: base64Encode(
+      `><path d="M140-160v-680h40v640h640v40H140Zm155.38-140v-292.31h80V-300h-80Zm180 0v-492.31h80V-300h-80Zm180 0v-132.31h80.01V-300h-80.01Z"/>`,
+    ),
+  };
+}
+
 export function accountBox200(
   fill: string = "rgba(227, 227, 227, 1)",
   width: number = 24,

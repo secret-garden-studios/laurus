@@ -26,7 +26,7 @@ export default function Toolbar({ me }: Toolbar) {
         justifyContent: "center",
       }}
     >
-      <Navbar resolution={{ ...uiState.resolution }} guest={!me} />
+      <Navbar resolution={{ ...uiState.resolution }} guest={!me} admin={me?.role === "admin"} />
       <div
         style={{
           display: "grid",
@@ -45,7 +45,6 @@ export default function Toolbar({ me }: Toolbar) {
           }}
         />
       </div>
-      {/* page tools */}
       <div>
         <ToolbarButton
           selected={uiState.tool.type == "create"}
