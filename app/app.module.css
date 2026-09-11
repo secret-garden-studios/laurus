@@ -323,3 +323,11 @@ body:not([data-dragging]) .effect-group-row[data-selected]:hover {
       "accounts";
   }
 }
+
+.underline-on-hover {
+  text-decoration: none;
+}
+
+.underline-on-hover:hover {
+  text-decoration: underline;
+}
