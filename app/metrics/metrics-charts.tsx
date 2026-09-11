@@ -633,7 +633,7 @@ export function VisitorsChart({ series }: VisitorsChart) {
 
   if (view === "table") {
     return (
-      <div style={{ display: "grid", gap: dynamicSizes.container.gap }}>
+      <div style={{ display: "grid", gap: dynamicSizes.container.gap, minWidth: 0 }}>
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <ViewToggle view={view} onChange={setView} />
         </div>
@@ -652,18 +652,24 @@ export function VisitorsChart({ series }: VisitorsChart) {
   }
 
   return (
-    <div style={{ display: "grid", gap: dynamicSizes.container.gap }}>
+    <div style={{ display: "grid", gap: dynamicSizes.container.gap, minWidth: 0 }}>
       <div
-        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: dynamicSizes.header.gap }}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: dynamicSizes.header.gap,
+          minWidth: 0,
+        }}
       >
-        <div style={{ display: "flex", gap: dynamicSizes.legend.gap, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: dynamicSizes.legend.gap, flexWrap: "wrap", minWidth: 0 }}>
           <LegendSwatch color={VIZ.returning} label="returning" />
           <LegendSwatch color={VIZ.fresh} label="new" />
         </div>
         <ViewToggle view={view} onChange={setView} />
       </div>
 
-      <div ref={containerRef} style={{ position: "relative", width: "100%" }}>
+      <div ref={containerRef} style={{ position: "relative", width: "100%", minWidth: 0, overflowX: "auto" }}>
         <svg
           width={width}
           height={height}
@@ -1189,8 +1195,14 @@ interface RankedBars {
   rows: { label: string; value: number; secondary?: string }[];
   valueLabel: string;
   emptyMessage?: string;
+  emphasis?: boolean;
 }
-export function RankedBars({ rows, valueLabel, emptyMessage = "Nothing recorded in this range." }: RankedBars) {
+export function RankedBars({
+  rows,
+  valueLabel,
+  emptyMessage = "Nothing recorded in this range.",
+  emphasis = false,
+}: RankedBars) {
   const { resolution } = useContext(MetricsContext);
   const [dynamicSizes] = useState(() => {
     switch (resolution.type) {
@@ -1242,11 +1254,25 @@ export function RankedBars({ rows, valueLabel, emptyMessage = "Nothing recorded 
     );
   }
 
+  const weight = emphasis
+    ? {
+        listGap: dynamicSizes.list.gap + 6,
+        barHeight: Math.round(dynamicSizes.bar.height * 1.9),
+        labelFont: dynamicSizes.label.fontSize + 1,
+        valueFont: dynamicSizes.value.fontSize + 3,
+      }
+    : {
+        listGap: dynamicSizes.list.gap,
+        barHeight: dynamicSizes.bar.height,
+        labelFont: dynamicSizes.label.fontSize,
+        valueFont: dynamicSizes.value.fontSize,
+      };
+
   const max = Math.max(...rows.map((r) => r.value), 1);
 
   return (
     <div style={{ display: "grid", gap: dynamicSizes.container.gap }}>
-      <div style={{ display: "grid", gap: dynamicSizes.list.gap }}>
+      <div style={{ display: "grid", gap: weight.listGap }}>
         {rows.map((row) => (
           <div key={`${row.label}-${row.value}`} style={{ display: "grid", gap: dynamicSizes.row.gap }}>
             <div
@@ -1260,7 +1286,7 @@ export function RankedBars({ rows, valueLabel, emptyMessage = "Nothing recorded 
               <span
                 className={dellaRespira.className}
                 style={{
-                  fontSize: dynamicSizes.label.fontSize,
+                  fontSize: weight.labelFont,
                   color: VIZ.primaryInk,
                   overflow: "hidden",
                   textOverflow: "ellipsis",
@@ -1289,8 +1315,8 @@ export function RankedBars({ rows, valueLabel, emptyMessage = "Nothing recorded 
                 <span
                   className={ubuntuMono.className}
                   style={{
-                    fontSize: dynamicSizes.value.fontSize,
-                    color: VIZ.secondaryInk,
+                    fontSize: weight.valueFont,
+                    color: emphasis ? VIZ.primaryInk : VIZ.secondaryInk,
                     fontVariantNumeric: "tabular-nums",
                   }}
                 >
@@ -1298,11 +1324,11 @@ export function RankedBars({ rows, valueLabel, emptyMessage = "Nothing recorded 
                 </span>
               </span>
             </div>
-            <div style={{ width: "100%", height: dynamicSizes.bar.height }} aria-hidden="true">
+            <div style={{ width: "100%", height: weight.barHeight }} aria-hidden="true">
               <div
                 style={{
                   width: `${Math.max((row.value / max) * 100, dynamicSizes.bar.minPercent)}%`,
-                  height: dynamicSizes.bar.height,
+                  height: weight.barHeight,
                   background: VIZ.returning,
                   borderRadius: `0 ${dynamicSizes.bar.radius}px ${dynamicSizes.bar.radius}px 0`,
                 }}

@@ -4,7 +4,11 @@ const VISITOR_KEY = "laurus_visitor_id";
 const SESSION_KEY = "laurus_session_id";
 
 export const PAGE_VIEW = "page_view";
-export const SIGN_UP = "sign_up";
+export const FULL_ACCESS_CLICK = "full_access_click";
+export const ACCOUNT_REQUEST = "account_request";
+export const ACCOUNT_ACTIVATED = "account_activated";
+export const CONTACT_CLICK = "contact_click";
+export const CONTACT_MESSAGE = "contact_message";
 
 export interface AnalyticsEvent_V1_0 {
   event_id: string;
@@ -46,6 +50,10 @@ function newId(): string {
   } catch {
     return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
   }
+}
+
+export function currentVisitorId(): string | null {
+  return readStored(VISITOR_KEY);
 }
 
 function visitorId(): string | null {

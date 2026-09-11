@@ -7,7 +7,28 @@ import ToolbarButton from "../components/toolbar-button";
 import { refresh200 } from "../svg-repo";
 import { MeDependencies } from "../page";
 import { ProjectsResolution } from "../projects/projects-resolution";
-import { MetricsDependencies, DEFAULT_RANGE_DAYS, RANGE_OPTIONS, getMetrics } from "./metrics.server";
+import {
+  BlockedEmail_V1_0,
+  ContactSender_V1_0,
+  ManagedAccount_V1_0,
+  MetricsDependencies,
+  ACTIVE,
+  AWAITING_PASSWORD,
+  DEFAULT_RANGE_DAYS,
+  RANGE_OPTIONS,
+  READ_ONLY,
+  REQUESTED,
+  ROLE_LABELS,
+  ROLE_OPTIONS,
+  approveAccount,
+  blockEmail,
+  checkEmailDelivery,
+  getAccounts,
+  getContactBlocks,
+  getMetrics,
+  setAccountRole,
+  unblockEmail,
+} from "./metrics.server";
 import {
   DataTable,
   Panel,
@@ -45,20 +66,20 @@ export default function Metrics({ apiOrigin, me, resolution, metrics: initialMet
     switch (resolution.type) {
       case "high":
         return {
-          body: { padding: 20, gap: 20, panelColumnMin: 420 },
+          body: { padding: 20, gap: 20 },
           loading: { opacity: 0.55, transitionMs: 120 },
           accounts: { gap: 18, statGap: 8, sectionGap: 8 },
         };
       case "midhigh":
         return {
-          body: { padding: 16, gap: 16, panelColumnMin: 340 },
+          body: { padding: 16, gap: 16 },
           loading: { opacity: 0.55, transitionMs: 120 },
           accounts: { gap: 14, statGap: 6, sectionGap: 6 },
         };
       case "low":
       case "midlow":
         return {
-          body: { padding: 13, gap: 13, panelColumnMin: 300 },
+          body: { padding: 13, gap: 13 },
           loading: { opacity: 0.55, transitionMs: 120 },
           accounts: { gap: 12, statGap: 6, sectionGap: 5 },
         };
@@ -92,8 +113,20 @@ export default function Metrics({ apiOrigin, me, resolution, metrics: initialMet
     void load(days);
   }, [days, loading, load]);
 
+  const refreshAccounts = useCallback(async () => {
+    const next = await getAccounts(apiOrigin, me.accessToken);
+    if (!next) return;
+    setMetrics((held) => ({ ...held, accounts: next }));
+  }, [apiOrigin, me.accessToken]);
+
+  const refreshBlocks = useCallback(async () => {
+    const next = await getContactBlocks(apiOrigin, me.accessToken);
+    if (!next) return;
+    setMetrics((held) => ({ ...held, blocks: next }));
+  }, [apiOrigin, me.accessToken]);
+
   const metricsContextValue = useMemo(() => ({ resolution }), [resolution]);
-  const { overview, retention, breakdowns, users } = metrics;
+  const { overview, retention, breakdowns, users, accounts, blocks } = metrics;
 
   return (
     <MetricsContext value={metricsContextValue}>
@@ -129,21 +162,74 @@ export default function Metrics({ apiOrigin, me, resolution, metrics: initialMet
             {overview ? (
               <>
                 <Headline overview={overview} />
-                <Panel title="unique visitors" subtitle={`${overview.range.from} to ${overview.range.to}, UTC days`}>
-                  <VisitorsChart series={overview.series} />
-                </Panel>
-
                 <div
-                  style={{
-                    display: "grid",
-                    gap: dynamicSizes.body.gap,
-                    gridTemplateColumns: `repeat(auto-fit, minmax(${dynamicSizes.body.panelColumnMin}px, 1fr))`,
-                  }}
+                  className={styles["metrics-panels"]}
+                  style={{ "--grid-gap": `${dynamicSizes.body.gap}px` } as React.CSSProperties}
                 >
-                  <Panel title="weekly retention" subtitle="share of each week's first-time visitors seen again">
+                  <Panel
+                    title="unique visitors"
+                    subtitle={`${overview.range.from} to ${overview.range.to}, UTC days`}
+                    style={{ gridArea: "chart" }}
+                  >
+                    <VisitorsChart series={overview.series} />
+                  </Panel>
+                  <Panel
+                    title="sign-up funnel"
+                    subtitle="from a full access click to an activated account"
+                    style={{ gridArea: "funnel" }}
+                  >
+                    <div style={{ display: "grid", gap: dynamicSizes.accounts.gap }}>
+                      <div style={{ display: "grid", gap: dynamicSizes.accounts.sectionGap }}>
+                        <SectionLabel>visitors</SectionLabel>
+                        <RankedBars
+                          rows={[
+                            {
+                              label: "full access clicks",
+                              value: overview.totals.full_access_clicks,
+                              secondary: `${formatPercent(overview.totals.full_access_rate)} of visitors`,
+                            },
+                            {
+                              label: "account requests",
+                              value: overview.totals.account_requests,
+                              secondary: `${formatPercent(overview.totals.request_conversion_rate)} of clicks`,
+                            },
+                          ]}
+                          valueLabel="bar length is unique visitors"
+                          emphasis
+                          emptyMessage="Nobody reached the form in this range."
+                        />
+                      </div>
+                      <div style={{ display: "grid", gap: dynamicSizes.accounts.sectionGap }}>
+                        <SectionLabel>accounts</SectionLabel>
+                        <RankedBars
+                          rows={[
+                            { label: "usernames claimed", value: overview.totals.claimed },
+                            {
+                              label: "approved",
+                              value: overview.totals.approved,
+                              secondary: `${formatPercent(overview.totals.approval_rate)} of claims`,
+                            },
+                            {
+                              label: "activated",
+                              value: overview.totals.activated,
+                              secondary: `${formatPercent(overview.totals.activation_rate)} of approved`,
+                            },
+                          ]}
+                          valueLabel="bar length is accounts"
+                          emphasis
+                          emptyMessage="No usernames claimed in this range."
+                        />
+                      </div>
+                    </div>
+                  </Panel>
+                  <Panel
+                    title="weekly retention"
+                    subtitle="share of each week's first-time visitors seen again"
+                    style={{ gridArea: "retention" }}
+                  >
                     <RetentionGrid cohorts={retention?.cohorts ?? []} weeks={retention?.weeks ?? 8} />
                   </Panel>
-                  <Panel title="top pages" subtitle="page views in range">
+                  <Panel title="top pages" subtitle="page views in range" style={{ gridArea: "pages" }}>
                     <RankedBars
                       rows={(breakdowns?.pages ?? []).map((p) => ({
                         label: p.path,
@@ -153,7 +239,7 @@ export default function Metrics({ apiOrigin, me, resolution, metrics: initialMet
                       valueLabel="bar length is page views"
                     />
                   </Panel>
-                  <Panel title="referrers" subtitle="sessions by source">
+                  <Panel title="referrers" subtitle="sessions by source" style={{ gridArea: "referrers" }}>
                     <RankedBars
                       rows={(breakdowns?.referrers ?? []).map((r) => ({
                         label: r.referrer,
@@ -163,7 +249,56 @@ export default function Metrics({ apiOrigin, me, resolution, metrics: initialMet
                       valueLabel="bar length is sessions"
                     />
                   </Panel>
-                  <Panel title="campaigns" subtitle="tagged sessions (utm)">
+                  <Panel title="devices" subtitle="visitors by hardware and software" style={{ gridArea: "devices" }}>
+                    <div style={{ display: "grid", gap: dynamicSizes.accounts.gap }}>
+                      <FacetList title="device" rows={breakdowns?.devices ?? []} />
+                      <FacetList title="browser" rows={breakdowns?.browsers ?? []} />
+                      <FacetList title="operating system" rows={breakdowns?.operating_systems ?? []} />
+                    </div>
+                  </Panel>
+                  <Panel title="contact" subtitle="who reached out, and who wrote in" style={{ gridArea: "contact" }}>
+                    <div style={{ display: "grid", gap: dynamicSizes.accounts.gap }}>
+                      <div style={{ display: "grid", gap: dynamicSizes.accounts.sectionGap }}>
+                        <SectionLabel>visitors</SectionLabel>
+                        <RankedBars
+                          rows={[
+                            {
+                              label: "contact opens",
+                              value: overview.totals.contact_clicks,
+                              secondary: `${formatPercent(overview.totals.contact_rate)} of visitors`,
+                            },
+                            {
+                              label: "messages sent",
+                              value: overview.totals.contact_messages,
+                              secondary: `${formatPercent(overview.totals.contact_conversion_rate)} of opens`,
+                            },
+                          ]}
+                          valueLabel="bar length is unique visitors"
+                          emphasis
+                          emptyMessage="Nobody opened the contact form in this range."
+                        />
+                      </div>
+                      <ContactRoster
+                        apiOrigin={apiOrigin}
+                        accessToken={me.accessToken}
+                        senders={blocks?.senders ?? []}
+                        onChanged={refreshBlocks}
+                      />
+                    </div>
+                  </Panel>
+                  <Panel
+                    title="blocked"
+                    subtitle="addresses shut out of the contact form"
+                    style={{ gridArea: "blocked" }}
+                  >
+                    <BlockRoster
+                      apiOrigin={apiOrigin}
+                      accessToken={me.accessToken}
+                      blocked={blocks?.blocked ?? []}
+                      onChanged={refreshBlocks}
+                    />
+                  </Panel>
+                  <Panel title="campaigns" subtitle="tagged sessions (utm)" style={{ gridArea: "campaigns" }}>
                     <DataTable
                       columns={["Source", "Medium", "Campaign", "Sessions"]}
                       rows={(breakdowns?.campaigns ?? []).map((c) => [c.source, c.medium, c.campaign, c.sessions])}
@@ -171,33 +306,38 @@ export default function Metrics({ apiOrigin, me, resolution, metrics: initialMet
                       emptyMessage="No campaign-tagged traffic in this range."
                     />
                   </Panel>
-                  <Panel title="devices" subtitle="visitors by hardware and software">
-                    <div style={{ display: "grid", gap: dynamicSizes.accounts.gap }}>
-                      <FacetList title="device" rows={breakdowns?.devices ?? []} />
-                      <FacetList title="browser" rows={breakdowns?.browsers ?? []} />
-                      <FacetList title="operating system" rows={breakdowns?.operating_systems ?? []} />
-                    </div>
-                  </Panel>
-                  <Panel title="accounts" subtitle="signups and logged-in activity">
+                  <Panel
+                    title="accounts"
+                    subtitle="who is signed up, and what they may do"
+                    style={{ gridArea: "accounts" }}
+                  >
                     <div style={{ display: "grid", gap: dynamicSizes.accounts.gap }}>
                       <div
                         style={{
                           display: "grid",
                           gap: dynamicSizes.accounts.statGap,
-                          gridTemplateColumns: "repeat(2, 1fr)",
+                          gridTemplateColumns: "repeat(3, 1fr)",
                         }}
                       >
                         <MiniStat label="registered users" value={formatCount(users?.totals.total_users ?? 0)} />
                         <MiniStat label="new in range" value={formatCount(users?.totals.new_users ?? 0)} />
+                        <MiniStat label="activated" value={formatCount(users?.totals.activated_users ?? 0)} />
+                        <MiniStat label="awaiting approval" value={formatCount(users?.totals.pending_approval ?? 0)} />
+                        <MiniStat
+                          label="awaiting password"
+                          value={formatCount(users?.totals.pending_activation ?? 0)}
+                        />
                         <MiniStat
                           label="identified visitors"
                           value={formatCount(users?.totals.identified_visitors ?? 0)}
                         />
-                        <MiniStat
-                          label="visitor → signup"
-                          value={formatPercent(users?.totals.visitor_to_signup_rate ?? 0)}
-                        />
                       </div>
+                      <AccountRoster
+                        apiOrigin={apiOrigin}
+                        accessToken={me.accessToken}
+                        accounts={accounts?.accounts ?? []}
+                        onChanged={refreshAccounts}
+                      />
                       <div style={{ display: "grid", gap: dynamicSizes.accounts.sectionGap }}>
                         <SectionLabel>most active accounts</SectionLabel>
                         <DataTable
@@ -205,19 +345,6 @@ export default function Metrics({ apiOrigin, me, resolution, metrics: initialMet
                           rows={(users?.active_users ?? []).map((u) => [u.username, u.sessions, u.page_views])}
                           numericFrom={1}
                           emptyMessage="No logged-in activity in this range."
-                        />
-                      </div>
-                      <div style={{ display: "grid", gap: dynamicSizes.accounts.sectionGap }}>
-                        <SectionLabel>recent signups</SectionLabel>
-                        <DataTable
-                          columns={["User", "Role", "Joined"]}
-                          rows={(users?.recent_signups ?? []).map((u) => [
-                            u.username,
-                            u.role,
-                            u.created_at ? u.created_at.slice(0, 10) : "unknown",
-                          ])}
-                          numericFrom={2}
-                          emptyMessage="No signups recorded yet."
                         />
                       </div>
                     </div>
@@ -237,6 +364,604 @@ export default function Metrics({ apiOrigin, me, resolution, metrics: initialMet
         </div>
       </div>
     </MetricsContext>
+  );
+}
+
+const STATE_LABELS: Record<string, string> = {
+  [REQUESTED]: "awaiting approval",
+  [AWAITING_PASSWORD]: "awaiting password",
+  [READ_ONLY]: "read only",
+  [ACTIVE]: "active",
+};
+
+interface AccountRoster {
+  apiOrigin: string | undefined;
+  accessToken: string | undefined;
+  accounts: ManagedAccount_V1_0[];
+  onChanged: () => Promise<void>;
+}
+const VISIBLE_ROWS = 12;
+
+function AccountRoster({ apiOrigin, accessToken, accounts, onChanged }: AccountRoster) {
+  const { resolution } = useContext(MetricsContext);
+  const [inFlight, setInFlight] = useState<string | undefined>(undefined);
+  const [notice, setNotice] = useState<string>("");
+  const [query, setQuery] = useState<string>("");
+  const [dynamicSizes] = useState(() => {
+    switch (resolution.type) {
+      case "high":
+        return {
+          container: { gap: 14 },
+          row: { gap: 10, padding: 9, height: 48 },
+          label: { fontSize: 12 },
+          meta: { fontSize: 10 },
+          search: { height: 34, fontSize: 11 },
+        };
+      case "midhigh":
+        return {
+          container: { gap: 12 },
+          row: { gap: 9, padding: 8, height: 44 },
+          label: { fontSize: 11 },
+          meta: { fontSize: 9 },
+          search: { height: 32, fontSize: 10 },
+        };
+      case "low":
+      case "midlow":
+        return {
+          container: { gap: 10 },
+          row: { gap: 8, padding: 7, height: 40 },
+          label: { fontSize: 10 },
+          meta: { fontSize: 9 },
+          search: { height: 30, fontSize: 10 },
+        };
+    }
+  });
+
+  const busy = inFlight !== undefined;
+  const trimmed = query.trim().toLowerCase();
+  const matches = useMemo(
+    () => (trimmed ? accounts.filter((a) => a.username.toLowerCase().includes(trimmed)) : accounts),
+    [accounts, trimmed],
+  );
+  const listMaxHeight = dynamicSizes.row.height * VISIBLE_ROWS + dynamicSizes.row.gap * (VISIBLE_ROWS - 1);
+
+  const approve = useCallback(
+    async (username: string) => {
+      if (busy) return;
+      setInFlight(username);
+      setNotice("");
+      const result = await approveAccount(apiOrigin, accessToken, username);
+      if (!result) {
+        setNotice("the approval did not go through");
+      } else if (!result.success) {
+        setNotice(result.message);
+      } else {
+        setNotice(
+          result.email_sent
+            ? `${result.username} approved, link emailed to ${result.email}`
+            : `${result.username} approved, but the email failed: resend the link`,
+        );
+        await onChanged();
+      }
+      setInFlight(undefined);
+    },
+    [apiOrigin, accessToken, busy, onChanged],
+  );
+
+  const changeRole = useCallback(
+    async (username: string, role: string) => {
+      if (busy) return;
+      setInFlight(username);
+      setNotice("");
+      const result = await setAccountRole(apiOrigin, accessToken, username, role);
+      if (!result) {
+        setNotice("the role could not be changed");
+      } else if (!result.success) {
+        setNotice(result.message);
+      } else {
+        setNotice(
+          result.email_sent
+            ? `${result.username} set to ${ROLE_LABELS[result.role] ?? result.role}, email sent`
+            : `${result.username} set to ${ROLE_LABELS[result.role] ?? result.role}, but the email failed`,
+        );
+        await onChanged();
+      }
+      setInFlight(undefined);
+    },
+    [apiOrigin, accessToken, busy, onChanged],
+  );
+
+  const checkEmail = useCallback(async () => {
+    if (busy) return;
+    setInFlight("__email_check__");
+    setNotice("");
+    const result = await checkEmailDelivery(apiOrigin, accessToken);
+    if (!result) {
+      setNotice("the email check could not run");
+    } else if (!result.success) {
+      setNotice(`${result.transport}: ${result.message}`);
+    } else {
+      setNotice(`${result.transport}: test email sent to ${result.sent_to}`);
+    }
+    setInFlight(undefined);
+  }, [apiOrigin, accessToken, busy]);
+
+  return (
+    <div style={{ display: "grid", gap: dynamicSizes.container.gap }}>
+      {accounts.length === 0 ? (
+        <span className={dellaRespira.className} style={{ fontSize: dynamicSizes.label.fontSize, color: VIZ.mutedInk }}>
+          No accounts yet.
+        </span>
+      ) : (
+        <>
+          <input
+            className={dellaRespira.className}
+            value={query}
+            onChange={(event) => setQuery(event.currentTarget.value)}
+            placeholder="filter by username"
+            spellCheck={false}
+            autoComplete="off"
+            style={{
+              height: dynamicSizes.search.height,
+              fontSize: dynamicSizes.search.fontSize,
+              letterSpacing: 1,
+              padding: "0 10px",
+              borderRadius: 6,
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: "rgb(25,25,25)",
+              color: VIZ.primaryInk,
+              boxSizing: "border-box",
+              outline: "none",
+              width: "100%",
+            }}
+          />
+          <span
+            className={dellaRespira.className}
+            style={{ fontSize: dynamicSizes.meta.fontSize, color: VIZ.mutedInk }}
+          >
+            {`${matches.length === accounts.length ? accounts.length : `${matches.length} of ${accounts.length}`} accounts${
+              matches.length > VISIBLE_ROWS ? " · scroll for more" : ""
+            }`}
+          </span>
+          {matches.length === 0 ? (
+            <span
+              className={dellaRespira.className}
+              style={{ fontSize: dynamicSizes.label.fontSize, color: VIZ.mutedInk }}
+            >
+              {`No username matches "${query.trim()}".`}
+            </span>
+          ) : (
+            <div
+              style={{
+                display: "grid",
+                gap: dynamicSizes.row.gap,
+                maxHeight: listMaxHeight,
+                overflowY: "auto",
+                overflowX: "hidden",
+                alignContent: "start",
+              }}
+            >
+              {matches.map((account) => (
+                <div
+                  key={account.username}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: dynamicSizes.row.gap,
+                    padding: `0 ${dynamicSizes.row.padding}px`,
+                    height: dynamicSizes.row.height,
+                    boxSizing: "border-box",
+                    borderRadius: 6,
+                    background: "rgba(255,255,255,0.03)",
+                  }}
+                >
+                  <div style={{ display: "grid", gap: 2, minWidth: 0 }}>
+                    <span
+                      className={dellaRespira.className}
+                      style={{
+                        fontSize: dynamicSizes.label.fontSize,
+                        color: VIZ.primaryInk,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {account.username}
+                    </span>
+                    <span
+                      className={ubuntuMono.className}
+                      style={{
+                        fontSize: dynamicSizes.meta.fontSize,
+                        color: VIZ.mutedInk,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {`${account.email} · ${STATE_LABELS[account.state] ?? account.state}`}
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: dynamicSizes.row.gap }}>
+                    {account.activated ? (
+                      <></>
+                    ) : (
+                      <div
+                        className={dellaRespira.className}
+                        onClick={() => void approve(account.username)}
+                        style={{
+                          fontSize: dynamicSizes.meta.fontSize,
+                          letterSpacing: 1,
+                          padding: "6px 10px",
+                          borderRadius: 6,
+                          whiteSpace: "nowrap",
+                          border: "1px solid rgba(255,255,255,0.12)",
+                          color: busy ? VIZ.mutedInk : VIZ.primaryInk,
+                          cursor: busy ? "progress" : "pointer",
+                        }}
+                      >
+                        {inFlight === account.username ? "sending" : account.approved_at ? "resend link" : "approve"}
+                      </div>
+                    )}
+                    <select
+                      className={dellaRespira.className}
+                      value={account.role}
+                      disabled={busy}
+                      onChange={(event) => void changeRole(account.username, event.currentTarget.value)}
+                      style={{
+                        fontSize: dynamicSizes.meta.fontSize,
+                        letterSpacing: 1,
+                        padding: "6px 8px",
+                        borderRadius: 6,
+                        border: "1px solid rgba(255,255,255,0.12)",
+                        background: "rgb(25,25,25)",
+                        color: busy ? VIZ.mutedInk : VIZ.primaryInk,
+                        cursor: busy ? "progress" : "pointer",
+                        outline: "none",
+                      }}
+                    >
+                      {ROLE_OPTIONS.map((role) => (
+                        <option key={role} value={role}>
+                          {ROLE_LABELS[role]}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+        <span
+          className={dellaRespira.className}
+          style={{ fontSize: dynamicSizes.meta.fontSize, color: VIZ.mutedInk, minWidth: 0 }}
+        >
+          {notice}
+        </span>
+        <div
+          className={dellaRespira.className}
+          onClick={() => void checkEmail()}
+          style={{
+            fontSize: dynamicSizes.meta.fontSize,
+            letterSpacing: 1,
+            padding: "6px 10px",
+            borderRadius: 6,
+            whiteSpace: "nowrap",
+            border: "1px solid rgba(255,255,255,0.12)",
+            color: busy ? VIZ.mutedInk : VIZ.primaryInk,
+            cursor: busy ? "progress" : "pointer",
+          }}
+        >
+          {inFlight === "__email_check__" ? "sending" : "send test email"}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function useRosterSizes() {
+  const { resolution } = useContext(MetricsContext);
+  const [dynamicSizes] = useState(() => {
+    switch (resolution.type) {
+      case "high":
+        return {
+          container: { gap: 14 },
+          row: { gap: 10, padding: 9, height: 48 },
+          label: { fontSize: 12 },
+          meta: { fontSize: 10 },
+          search: { height: 34, fontSize: 11 },
+        };
+      case "midhigh":
+        return {
+          container: { gap: 12 },
+          row: { gap: 9, padding: 8, height: 44 },
+          label: { fontSize: 11 },
+          meta: { fontSize: 9 },
+          search: { height: 32, fontSize: 10 },
+        };
+      case "low":
+      case "midlow":
+        return {
+          container: { gap: 10 },
+          row: { gap: 8, padding: 7, height: 40 },
+          label: { fontSize: 10 },
+          meta: { fontSize: 9 },
+          search: { height: 30, fontSize: 10 },
+        };
+    }
+  });
+  return dynamicSizes;
+}
+
+type RosterSizes = ReturnType<typeof useRosterSizes>;
+
+function rosterStyles(sizes: RosterSizes, busy: boolean) {
+  return {
+    actionStyle: {
+      fontSize: sizes.meta.fontSize,
+      letterSpacing: 1,
+      padding: "6px 10px",
+      borderRadius: 6,
+      whiteSpace: "nowrap" as const,
+      border: "1px solid rgba(255,255,255,0.12)",
+      color: busy ? VIZ.mutedInk : VIZ.primaryInk,
+      cursor: busy ? ("progress" as const) : ("pointer" as const),
+    },
+    rowStyle: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: sizes.row.gap,
+      padding: `0 ${sizes.row.padding}px`,
+      height: sizes.row.height,
+      boxSizing: "border-box" as const,
+      borderRadius: 6,
+      background: "rgba(255,255,255,0.03)",
+    },
+    truncated: {
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap" as const,
+    },
+    listStyle: {
+      display: "grid",
+      gap: sizes.row.gap,
+      maxHeight: sizes.row.height * VISIBLE_ROWS + sizes.row.gap * (VISIBLE_ROWS - 1),
+      overflowY: "auto" as const,
+      overflowX: "hidden" as const,
+      alignContent: "start" as const,
+    },
+    inputStyle: {
+      height: sizes.search.height,
+      fontSize: sizes.search.fontSize,
+      letterSpacing: 1,
+      padding: "0 10px",
+      borderRadius: 6,
+      border: "1px solid rgba(255,255,255,0.12)",
+      background: "rgb(25,25,25)",
+      color: VIZ.primaryInk,
+      boxSizing: "border-box" as const,
+      outline: "none",
+    },
+  };
+}
+
+function useBlocking(apiOrigin: string | undefined, accessToken: string | undefined, onChanged: () => Promise<void>) {
+  const [inFlight, setInFlight] = useState<string | undefined>(undefined);
+  const [notice, setNotice] = useState<string>("");
+  const busy = inFlight !== undefined;
+
+  const block = useCallback(
+    async (email: string, why: string) => {
+      if (busy) return false;
+      const trimmed = email.trim();
+      if (!trimmed) {
+        setNotice("enter the address to block");
+        return false;
+      }
+      setInFlight(trimmed);
+      setNotice("");
+      const result = await blockEmail(apiOrigin, accessToken, trimmed, why.trim());
+      let blockedNow = false;
+      if (!result) {
+        setNotice("the block did not go through");
+      } else if (!result.success) {
+        setNotice(result.message);
+      } else {
+        setNotice(
+          result.devices > 0
+            ? `${result.email} blocked, with ${result.devices} ${result.devices === 1 ? "device" : "devices"} behind it`
+            : `${result.email} blocked`,
+        );
+        blockedNow = true;
+        await onChanged();
+      }
+      setInFlight(undefined);
+      return blockedNow;
+    },
+    [apiOrigin, accessToken, busy, onChanged],
+  );
+
+  const unblock = useCallback(
+    async (email: string) => {
+      if (busy) return;
+      setInFlight(email);
+      setNotice("");
+      const result = await unblockEmail(apiOrigin, accessToken, email);
+      if (!result) {
+        setNotice("the block could not be lifted");
+      } else if (!result.success) {
+        setNotice(result.message);
+      } else {
+        setNotice(`${result.email} unblocked`);
+        await onChanged();
+      }
+      setInFlight(undefined);
+    },
+    [apiOrigin, accessToken, busy, onChanged],
+  );
+
+  return { inFlight, notice, busy, block, unblock };
+}
+
+interface BlockRoster {
+  apiOrigin: string | undefined;
+  accessToken: string | undefined;
+  blocked: BlockedEmail_V1_0[];
+  onChanged: () => Promise<void>;
+}
+function BlockRoster({ apiOrigin, accessToken, blocked, onChanged }: BlockRoster) {
+  const sizes = useRosterSizes();
+  const { inFlight, notice, busy, block, unblock } = useBlocking(apiOrigin, accessToken, onChanged);
+  const [candidate, setCandidate] = useState<string>("");
+  const [reason, setReason] = useState<string>("");
+  const { actionStyle, rowStyle, truncated, listStyle, inputStyle } = rosterStyles(sizes, busy);
+
+  const submit = useCallback(async () => {
+    if (await block(candidate, reason)) {
+      setCandidate("");
+      setReason("");
+    }
+  }, [block, candidate, reason]);
+
+  return (
+    <div style={{ display: "grid", gap: sizes.container.gap }}>
+      <div style={{ display: "grid", gap: sizes.row.gap }}>
+        <input
+          className={ubuntuMono.className}
+          value={candidate}
+          onChange={(event) => setCandidate(event.currentTarget.value)}
+          placeholder="email address to block"
+          spellCheck={false}
+          autoComplete="off"
+          style={{ ...inputStyle, width: "100%" }}
+        />
+        <div style={{ display: "flex", alignItems: "center", gap: sizes.row.gap }}>
+          <input
+            className={dellaRespira.className}
+            value={reason}
+            onChange={(event) => setReason(event.currentTarget.value)}
+            placeholder="why (optional)"
+            spellCheck={false}
+            autoComplete="off"
+            style={{ ...inputStyle, flex: 1, minWidth: 0 }}
+          />
+          <div className={dellaRespira.className} onClick={() => void submit()} style={actionStyle}>
+            {busy && inFlight === candidate.trim() ? "blocking" : "block address"}
+          </div>
+        </div>
+      </div>
+
+      {blocked.length === 0 ? (
+        <span className={dellaRespira.className} style={{ fontSize: sizes.label.fontSize, color: VIZ.mutedInk }}>
+          No addresses are blocked.
+        </span>
+      ) : (
+        <div style={listStyle}>
+          {blocked.map((row) => (
+            <div key={row.email} style={rowStyle}>
+              <div style={{ display: "grid", gap: 2, minWidth: 0 }}>
+                <span
+                  className={ubuntuMono.className}
+                  style={{ fontSize: sizes.label.fontSize, color: VIZ.primaryInk, ...truncated }}
+                >
+                  {row.email}
+                </span>
+                <span
+                  className={ubuntuMono.className}
+                  style={{ fontSize: sizes.meta.fontSize, color: VIZ.mutedInk, ...truncated }}
+                >
+                  {`${row.devices} ${row.devices === 1 ? "device" : "devices"} · ${row.hits} dropped${
+                    row.reason ? ` · ${row.reason}` : ""
+                  }`}
+                </span>
+              </div>
+              <div className={dellaRespira.className} onClick={() => void unblock(row.email)} style={actionStyle}>
+                {inFlight === row.email ? "lifting" : "unblock"}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <span className={dellaRespira.className} style={{ fontSize: sizes.meta.fontSize, color: VIZ.mutedInk }}>
+        {notice}
+      </span>
+    </div>
+  );
+}
+
+interface ContactRoster {
+  apiOrigin: string | undefined;
+  accessToken: string | undefined;
+  senders: ContactSender_V1_0[];
+  onChanged: () => Promise<void>;
+}
+function ContactRoster({ apiOrigin, accessToken, senders, onChanged }: ContactRoster) {
+  const sizes = useRosterSizes();
+  const { inFlight, notice, busy, block } = useBlocking(apiOrigin, accessToken, onChanged);
+  const { actionStyle, rowStyle, truncated, listStyle } = rosterStyles(sizes, busy);
+
+  return (
+    <div style={{ display: "grid", gap: sizes.container.gap }}>
+      <div style={{ display: "grid", gap: sizes.row.gap }}>
+        <SectionLabel>who wrote in</SectionLabel>
+        {senders.length === 0 ? (
+          <span className={dellaRespira.className} style={{ fontSize: sizes.label.fontSize, color: VIZ.mutedInk }}>
+            Nobody has written in yet.
+          </span>
+        ) : (
+          <div style={listStyle}>
+            {senders.map((sender) => (
+              <div key={sender.email} style={rowStyle}>
+                <div style={{ display: "grid", gap: 2, minWidth: 0 }}>
+                  <span
+                    className={ubuntuMono.className}
+                    style={{
+                      fontSize: sizes.label.fontSize,
+                      color: sender.blocked ? VIZ.mutedInk : VIZ.primaryInk,
+                      ...truncated,
+                    }}
+                  >
+                    {sender.email}
+                  </span>
+                  <span
+                    className={ubuntuMono.className}
+                    style={{ fontSize: sizes.meta.fontSize, color: VIZ.mutedInk, ...truncated }}
+                  >
+                    {`${sender.messages} sent · ${sender.devices} ${sender.devices === 1 ? "device" : "devices"}${
+                      sender.last_sent_at ? ` · ${sender.last_sent_at.slice(0, 10)}` : ""
+                    }`}
+                  </span>
+                </div>
+                {sender.blocked ? (
+                  <span
+                    className={dellaRespira.className}
+                    style={{ fontSize: sizes.meta.fontSize, color: VIZ.mutedInk, whiteSpace: "nowrap" }}
+                  >
+                    {"blocked"}
+                  </span>
+                ) : (
+                  <div
+                    className={dellaRespira.className}
+                    onClick={() => void block(sender.email, "")}
+                    style={actionStyle}
+                  >
+                    {inFlight === sender.email ? "blocking" : "block"}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <span className={dellaRespira.className} style={{ fontSize: sizes.meta.fontSize, color: VIZ.mutedInk }}>
+        {notice}
+      </span>
+    </div>
   );
 }
 
@@ -593,13 +1318,6 @@ function Headline({ overview }: Headline) {
           delta={{ current: totals.page_views, previous: previous.page_views }}
           trend={series.map((p) => p.page_views)}
         />
-        <StatTile
-          label="signups"
-          value={formatCount(totals.signups)}
-          delta={{ current: totals.signups, previous: previous.signups }}
-          trend={series.map((p) => p.signups)}
-          footnote={`${formatPercent(totals.signup_rate)} of visitors`}
-        />
       </div>
       <div
         style={{
@@ -748,7 +1466,8 @@ function Statusbar({ overview, loading }: Statusbar) {
         `${formatCount(overview.totals.unique_visitors)} visitors`,
         `${formatCount(overview.totals.sessions)} sessions`,
         `${formatCount(overview.totals.page_views)} views`,
-        `${formatCount(overview.totals.signups)} signups`,
+        `${formatCount(overview.totals.claimed)} claimed`,
+        `${formatCount(overview.totals.activated)} activated`,
       ]
     : ["metrics unavailable"];
 

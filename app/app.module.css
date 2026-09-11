@@ -279,3 +279,55 @@ body:not([data-dragging]) .effect-group-row[data-selected]:hover {
   border: 1px solid rgba(255, 255, 255, 0.2);
   background: rgba(255, 255, 255, 0.08);
 }
+
+.metrics-panels {
+  display: grid;
+  gap: var(--grid-gap);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(300px, 0.9fr);
+  grid-template-areas:
+    "chart     chart     accounts"
+    "funnel    retention accounts"
+    "funnel    pages     accounts"
+    "referrers devices   accounts"
+    "contact   blocked   accounts"
+    "campaigns campaigns accounts";
+}
+
+@media (max-width: 1400px) {
+  .metrics-panels {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      "chart     chart"
+      "funnel    retention"
+      "funnel    pages"
+      "referrers devices"
+      "contact   blocked"
+      "campaigns campaigns"
+      "accounts  accounts";
+  }
+}
+
+@media (max-width: 900px) {
+  .metrics-panels {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "chart"
+      "funnel"
+      "retention"
+      "pages"
+      "referrers"
+      "devices"
+      "contact"
+      "blocked"
+      "campaigns"
+      "accounts";
+  }
+}
+
+.underline-on-hover {
+  text-decoration: none;
+}
+
+.underline-on-hover:hover {
+  text-decoration: underline;
+}

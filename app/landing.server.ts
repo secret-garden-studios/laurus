@@ -14,6 +14,11 @@ export const LANDING_ERROR = "try again later";
 export const EMAIL_ERROR = "try another email";
 export const USERNAME_ERROR = "try another username";
 export const UNAUTHORIZED_ERROR = "Unauthorized";
+export const AWAITING_APPROVAL_ERROR = "awaiting approval";
+export const TOO_MANY_ERROR = "too many requests";
+export const PASSWORD_LENGTH_ERROR = "8 characters or more";
+export const MIN_PASSWORD_LENGTH = 8;
+export const MAX_CONTACT_LENGTH = 4000;
 export const UNAUTHORIZED_EDIT = "You need to be logged in to do that!";
 export const FORBIDDEN_ACTION = "You don't have permission to do that!";
 export const FORBIDDEN_NAV = "You shouldn't be on this page!";
@@ -52,7 +57,7 @@ export async function authFetch(
 export interface Register_V1_0 {
   username: string;
   email: string;
-  password: string;
+  visitor_id: string | null;
 }
 export interface RegisterResult_V1_0 {
   success: boolean;
@@ -71,6 +76,7 @@ export type LaurusResetPassword = ResetPassword_V1_0;
 export interface ResetPassword_V1_0 {
   username: string;
   email: string;
+  visitor_id: string | null;
 }
 export interface ResetPasswordResult_V1_0 {
   success: boolean;
@@ -132,6 +138,19 @@ export async function registerUser(baseUrl: string | undefined, register: Regist
     };
   }
 }
+function loginError(status: number): string {
+  switch (status) {
+    case 401:
+      return UNAUTHORIZED_ERROR;
+    case 403:
+      return AWAITING_APPROVAL_ERROR;
+    case 429:
+      return TOO_MANY_ERROR;
+    default:
+      return LANDING_ERROR;
+  }
+}
+
 export async function login(baseUrl: string | undefined, username: string, password: string): Promise<LaurusToken> {
   const formData = new URLSearchParams();
   formData.append("username", username);
@@ -147,7 +166,7 @@ export async function login(baseUrl: string | undefined, username: string, passw
     if (!raw_response.ok) {
       return {
         success: false,
-        message: raw_response.statusText,
+        message: loginError(raw_response.status),
         access_token: "",
         token_type: "",
       };
@@ -262,5 +281,68 @@ export async function resetPasswordConfirm(
   } catch (error) {
     console.log({ error });
     return false;
+  }
+}
+
+export async function setPassword(
+  baseUrl: string | undefined,
+  newPassword: { token: string; new_password: string },
+): Promise<boolean> {
+  try {
+    const url = `${baseUrl}/set-password`;
+    const raw_response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(newPassword),
+    });
+    return raw_response.ok;
+  } catch (error) {
+    console.log({ error });
+    return false;
+  }
+}
+
+export type LaurusContact = Contact_V1_0;
+export interface Contact_V1_0 {
+  email: string;
+  message: string;
+  visitor_id: string | null;
+}
+export interface ContactResult_V1_0 {
+  success: boolean;
+  message: string;
+}
+export async function sendContact(baseUrl: string | undefined, contact: Contact_V1_0): Promise<ContactResult_V1_0> {
+  try {
+    const url = `${baseUrl}/contact`;
+    const raw_response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(contact),
+    });
+
+    if (!raw_response.ok) {
+      if (raw_response.status == 429) {
+        return { success: false, message: TOO_MANY_ERROR };
+      }
+      if (raw_response.status == 422) {
+        const errorData = await raw_response.json();
+        const emailError = errorData.errors?.find((e: ValidationError_V1_0) => e.field === "email");
+        if (emailError) {
+          return { success: false, message: EMAIL_ERROR };
+        }
+      }
+      return { success: false, message: LANDING_ERROR };
+    }
+
+    const response: ContactResult_V1_0 = await raw_response.json();
+    return response;
+  } catch (error) {
+    console.log({ error });
+    return { success: false, message: LANDING_ERROR };
   }
 }

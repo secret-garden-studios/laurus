@@ -9,7 +9,14 @@ async function fetchMetrics(
 ): Promise<MetricsDependencies> {
   const me = await mePromise;
   if (me.me?.role !== "admin") {
-    return { overview: undefined, retention: undefined, breakdowns: undefined, users: undefined };
+    return {
+      overview: undefined,
+      retention: undefined,
+      breakdowns: undefined,
+      users: undefined,
+      accounts: undefined,
+      blocks: undefined,
+    };
   }
   return getMetrics(laurusApi, me.accessToken, DEFAULT_RANGE_DAYS);
 }
