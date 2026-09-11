@@ -8,6 +8,8 @@ import { refresh200 } from "../svg-repo";
 import { MeDependencies } from "../page";
 import { ProjectsResolution } from "../projects/projects-resolution";
 import {
+  BlockedEmail_V1_0,
+  ContactSender_V1_0,
   ManagedAccount_V1_0,
   MetricsDependencies,
   ACTIVE,
@@ -19,10 +21,13 @@ import {
   ROLE_LABELS,
   ROLE_OPTIONS,
   approveAccount,
+  blockEmail,
   checkEmailDelivery,
   getAccounts,
+  getContactBlocks,
   getMetrics,
   setAccountRole,
+  unblockEmail,
 } from "./metrics.server";
 import {
   DataTable,
@@ -114,8 +119,14 @@ export default function Metrics({ apiOrigin, me, resolution, metrics: initialMet
     setMetrics((held) => ({ ...held, accounts: next }));
   }, [apiOrigin, me.accessToken]);
 
+  const refreshBlocks = useCallback(async () => {
+    const next = await getContactBlocks(apiOrigin, me.accessToken);
+    if (!next) return;
+    setMetrics((held) => ({ ...held, blocks: next }));
+  }, [apiOrigin, me.accessToken]);
+
   const metricsContextValue = useMemo(() => ({ resolution }), [resolution]);
-  const { overview, retention, breakdowns, users, accounts } = metrics;
+  const { overview, retention, breakdowns, users, accounts, blocks } = metrics;
 
   return (
     <MetricsContext value={metricsContextValue}>
@@ -245,6 +256,48 @@ export default function Metrics({ apiOrigin, me, resolution, metrics: initialMet
                       <FacetList title="operating system" rows={breakdowns?.operating_systems ?? []} />
                     </div>
                   </Panel>
+                  <Panel title="contact" subtitle="who reached out, and who wrote in" style={{ gridArea: "contact" }}>
+                    <div style={{ display: "grid", gap: dynamicSizes.accounts.gap }}>
+                      <div style={{ display: "grid", gap: dynamicSizes.accounts.sectionGap }}>
+                        <SectionLabel>visitors</SectionLabel>
+                        <RankedBars
+                          rows={[
+                            {
+                              label: "contact opens",
+                              value: overview.totals.contact_clicks,
+                              secondary: `${formatPercent(overview.totals.contact_rate)} of visitors`,
+                            },
+                            {
+                              label: "messages sent",
+                              value: overview.totals.contact_messages,
+                              secondary: `${formatPercent(overview.totals.contact_conversion_rate)} of opens`,
+                            },
+                          ]}
+                          valueLabel="bar length is unique visitors"
+                          emphasis
+                          emptyMessage="Nobody opened the contact form in this range."
+                        />
+                      </div>
+                      <ContactRoster
+                        apiOrigin={apiOrigin}
+                        accessToken={me.accessToken}
+                        senders={blocks?.senders ?? []}
+                        onChanged={refreshBlocks}
+                      />
+                    </div>
+                  </Panel>
+                  <Panel
+                    title="blocked"
+                    subtitle="addresses shut out of the contact form"
+                    style={{ gridArea: "blocked" }}
+                  >
+                    <BlockRoster
+                      apiOrigin={apiOrigin}
+                      accessToken={me.accessToken}
+                      blocked={blocks?.blocked ?? []}
+                      onChanged={refreshBlocks}
+                    />
+                  </Panel>
                   <Panel title="campaigns" subtitle="tagged sessions (utm)" style={{ gridArea: "campaigns" }}>
                     <DataTable
                       columns={["Source", "Medium", "Campaign", "Sessions"]}
@@ -327,7 +380,7 @@ interface AccountRoster {
   accounts: ManagedAccount_V1_0[];
   onChanged: () => Promise<void>;
 }
-const VISIBLE_ROWS = 5;
+const VISIBLE_ROWS = 12;
 
 function AccountRoster({ apiOrigin, accessToken, accounts, onChanged }: AccountRoster) {
   const { resolution } = useContext(MetricsContext);
@@ -604,6 +657,310 @@ function AccountRoster({ apiOrigin, accessToken, accounts, onChanged }: AccountR
           {inFlight === "__email_check__" ? "sending" : "send test email"}
         </div>
       </div>
+    </div>
+  );
+}
+
+function useRosterSizes() {
+  const { resolution } = useContext(MetricsContext);
+  const [dynamicSizes] = useState(() => {
+    switch (resolution.type) {
+      case "high":
+        return {
+          container: { gap: 14 },
+          row: { gap: 10, padding: 9, height: 48 },
+          label: { fontSize: 12 },
+          meta: { fontSize: 10 },
+          search: { height: 34, fontSize: 11 },
+        };
+      case "midhigh":
+        return {
+          container: { gap: 12 },
+          row: { gap: 9, padding: 8, height: 44 },
+          label: { fontSize: 11 },
+          meta: { fontSize: 9 },
+          search: { height: 32, fontSize: 10 },
+        };
+      case "low":
+      case "midlow":
+        return {
+          container: { gap: 10 },
+          row: { gap: 8, padding: 7, height: 40 },
+          label: { fontSize: 10 },
+          meta: { fontSize: 9 },
+          search: { height: 30, fontSize: 10 },
+        };
+    }
+  });
+  return dynamicSizes;
+}
+
+type RosterSizes = ReturnType<typeof useRosterSizes>;
+
+function rosterStyles(sizes: RosterSizes, busy: boolean) {
+  return {
+    actionStyle: {
+      fontSize: sizes.meta.fontSize,
+      letterSpacing: 1,
+      padding: "6px 10px",
+      borderRadius: 6,
+      whiteSpace: "nowrap" as const,
+      border: "1px solid rgba(255,255,255,0.12)",
+      color: busy ? VIZ.mutedInk : VIZ.primaryInk,
+      cursor: busy ? ("progress" as const) : ("pointer" as const),
+    },
+    rowStyle: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: sizes.row.gap,
+      padding: `0 ${sizes.row.padding}px`,
+      height: sizes.row.height,
+      boxSizing: "border-box" as const,
+      borderRadius: 6,
+      background: "rgba(255,255,255,0.03)",
+    },
+    truncated: {
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap" as const,
+    },
+    listStyle: {
+      display: "grid",
+      gap: sizes.row.gap,
+      maxHeight: sizes.row.height * VISIBLE_ROWS + sizes.row.gap * (VISIBLE_ROWS - 1),
+      overflowY: "auto" as const,
+      overflowX: "hidden" as const,
+      alignContent: "start" as const,
+    },
+    inputStyle: {
+      height: sizes.search.height,
+      fontSize: sizes.search.fontSize,
+      letterSpacing: 1,
+      padding: "0 10px",
+      borderRadius: 6,
+      border: "1px solid rgba(255,255,255,0.12)",
+      background: "rgb(25,25,25)",
+      color: VIZ.primaryInk,
+      boxSizing: "border-box" as const,
+      outline: "none",
+    },
+  };
+}
+
+function useBlocking(apiOrigin: string | undefined, accessToken: string | undefined, onChanged: () => Promise<void>) {
+  const [inFlight, setInFlight] = useState<string | undefined>(undefined);
+  const [notice, setNotice] = useState<string>("");
+  const busy = inFlight !== undefined;
+
+  const block = useCallback(
+    async (email: string, why: string) => {
+      if (busy) return false;
+      const trimmed = email.trim();
+      if (!trimmed) {
+        setNotice("enter the address to block");
+        return false;
+      }
+      setInFlight(trimmed);
+      setNotice("");
+      const result = await blockEmail(apiOrigin, accessToken, trimmed, why.trim());
+      let blockedNow = false;
+      if (!result) {
+        setNotice("the block did not go through");
+      } else if (!result.success) {
+        setNotice(result.message);
+      } else {
+        setNotice(
+          result.devices > 0
+            ? `${result.email} blocked, with ${result.devices} ${result.devices === 1 ? "device" : "devices"} behind it`
+            : `${result.email} blocked`,
+        );
+        blockedNow = true;
+        await onChanged();
+      }
+      setInFlight(undefined);
+      return blockedNow;
+    },
+    [apiOrigin, accessToken, busy, onChanged],
+  );
+
+  const unblock = useCallback(
+    async (email: string) => {
+      if (busy) return;
+      setInFlight(email);
+      setNotice("");
+      const result = await unblockEmail(apiOrigin, accessToken, email);
+      if (!result) {
+        setNotice("the block could not be lifted");
+      } else if (!result.success) {
+        setNotice(result.message);
+      } else {
+        setNotice(`${result.email} unblocked`);
+        await onChanged();
+      }
+      setInFlight(undefined);
+    },
+    [apiOrigin, accessToken, busy, onChanged],
+  );
+
+  return { inFlight, notice, busy, block, unblock };
+}
+
+interface BlockRoster {
+  apiOrigin: string | undefined;
+  accessToken: string | undefined;
+  blocked: BlockedEmail_V1_0[];
+  onChanged: () => Promise<void>;
+}
+function BlockRoster({ apiOrigin, accessToken, blocked, onChanged }: BlockRoster) {
+  const sizes = useRosterSizes();
+  const { inFlight, notice, busy, block, unblock } = useBlocking(apiOrigin, accessToken, onChanged);
+  const [candidate, setCandidate] = useState<string>("");
+  const [reason, setReason] = useState<string>("");
+  const { actionStyle, rowStyle, truncated, listStyle, inputStyle } = rosterStyles(sizes, busy);
+
+  const submit = useCallback(async () => {
+    if (await block(candidate, reason)) {
+      setCandidate("");
+      setReason("");
+    }
+  }, [block, candidate, reason]);
+
+  return (
+    <div style={{ display: "grid", gap: sizes.container.gap }}>
+      <div style={{ display: "grid", gap: sizes.row.gap }}>
+        <input
+          className={ubuntuMono.className}
+          value={candidate}
+          onChange={(event) => setCandidate(event.currentTarget.value)}
+          placeholder="email address to block"
+          spellCheck={false}
+          autoComplete="off"
+          style={{ ...inputStyle, width: "100%" }}
+        />
+        <div style={{ display: "flex", alignItems: "center", gap: sizes.row.gap }}>
+          <input
+            className={dellaRespira.className}
+            value={reason}
+            onChange={(event) => setReason(event.currentTarget.value)}
+            placeholder="why (optional)"
+            spellCheck={false}
+            autoComplete="off"
+            style={{ ...inputStyle, flex: 1, minWidth: 0 }}
+          />
+          <div className={dellaRespira.className} onClick={() => void submit()} style={actionStyle}>
+            {busy && inFlight === candidate.trim() ? "blocking" : "block address"}
+          </div>
+        </div>
+      </div>
+
+      {blocked.length === 0 ? (
+        <span className={dellaRespira.className} style={{ fontSize: sizes.label.fontSize, color: VIZ.mutedInk }}>
+          No addresses are blocked.
+        </span>
+      ) : (
+        <div style={listStyle}>
+          {blocked.map((row) => (
+            <div key={row.email} style={rowStyle}>
+              <div style={{ display: "grid", gap: 2, minWidth: 0 }}>
+                <span
+                  className={ubuntuMono.className}
+                  style={{ fontSize: sizes.label.fontSize, color: VIZ.primaryInk, ...truncated }}
+                >
+                  {row.email}
+                </span>
+                <span
+                  className={ubuntuMono.className}
+                  style={{ fontSize: sizes.meta.fontSize, color: VIZ.mutedInk, ...truncated }}
+                >
+                  {`${row.devices} ${row.devices === 1 ? "device" : "devices"} · ${row.hits} dropped${
+                    row.reason ? ` · ${row.reason}` : ""
+                  }`}
+                </span>
+              </div>
+              <div className={dellaRespira.className} onClick={() => void unblock(row.email)} style={actionStyle}>
+                {inFlight === row.email ? "lifting" : "unblock"}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <span className={dellaRespira.className} style={{ fontSize: sizes.meta.fontSize, color: VIZ.mutedInk }}>
+        {notice}
+      </span>
+    </div>
+  );
+}
+
+interface ContactRoster {
+  apiOrigin: string | undefined;
+  accessToken: string | undefined;
+  senders: ContactSender_V1_0[];
+  onChanged: () => Promise<void>;
+}
+function ContactRoster({ apiOrigin, accessToken, senders, onChanged }: ContactRoster) {
+  const sizes = useRosterSizes();
+  const { inFlight, notice, busy, block } = useBlocking(apiOrigin, accessToken, onChanged);
+  const { actionStyle, rowStyle, truncated, listStyle } = rosterStyles(sizes, busy);
+
+  return (
+    <div style={{ display: "grid", gap: sizes.container.gap }}>
+      <div style={{ display: "grid", gap: sizes.row.gap }}>
+        <SectionLabel>who wrote in</SectionLabel>
+        {senders.length === 0 ? (
+          <span className={dellaRespira.className} style={{ fontSize: sizes.label.fontSize, color: VIZ.mutedInk }}>
+            Nobody has written in yet.
+          </span>
+        ) : (
+          <div style={listStyle}>
+            {senders.map((sender) => (
+              <div key={sender.email} style={rowStyle}>
+                <div style={{ display: "grid", gap: 2, minWidth: 0 }}>
+                  <span
+                    className={ubuntuMono.className}
+                    style={{
+                      fontSize: sizes.label.fontSize,
+                      color: sender.blocked ? VIZ.mutedInk : VIZ.primaryInk,
+                      ...truncated,
+                    }}
+                  >
+                    {sender.email}
+                  </span>
+                  <span
+                    className={ubuntuMono.className}
+                    style={{ fontSize: sizes.meta.fontSize, color: VIZ.mutedInk, ...truncated }}
+                  >
+                    {`${sender.messages} sent · ${sender.devices} ${sender.devices === 1 ? "device" : "devices"}${
+                      sender.last_sent_at ? ` · ${sender.last_sent_at.slice(0, 10)}` : ""
+                    }`}
+                  </span>
+                </div>
+                {sender.blocked ? (
+                  <span
+                    className={dellaRespira.className}
+                    style={{ fontSize: sizes.meta.fontSize, color: VIZ.mutedInk, whiteSpace: "nowrap" }}
+                  >
+                    {"blocked"}
+                  </span>
+                ) : (
+                  <div
+                    className={dellaRespira.className}
+                    onClick={() => void block(sender.email, "")}
+                    style={actionStyle}
+                  >
+                    {inFlight === sender.email ? "blocking" : "block"}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <span className={dellaRespira.className} style={{ fontSize: sizes.meta.fontSize, color: VIZ.mutedInk }}>
+        {notice}
+      </span>
     </div>
   );
 }

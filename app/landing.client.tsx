@@ -20,8 +20,19 @@ import {
   PASSWORD_LENGTH_ERROR,
   MIN_PASSWORD_LENGTH,
   LaurusResetPassword,
+  LaurusContact,
+  sendContact,
+  MAX_CONTACT_LENGTH,
 } from "./landing.server";
-import { ACCOUNT_ACTIVATED, ACCOUNT_REQUEST, FULL_ACCESS_CLICK, track } from "./analytics/analytics.client";
+import {
+  ACCOUNT_ACTIVATED,
+  ACCOUNT_REQUEST,
+  CONTACT_CLICK,
+  CONTACT_MESSAGE,
+  currentVisitorId,
+  FULL_ACCESS_CLICK,
+  track,
+} from "./analytics/analytics.client";
 import { useRouter } from "next/navigation";
 
 export enum LandingFormType {
@@ -30,6 +41,7 @@ export enum LandingFormType {
   passwordReset,
   passwordConfirmation,
   passwordSetup,
+  contact,
   none,
 }
 
@@ -74,6 +86,8 @@ export default function Landing({ laurusApi, resolution, resetPasswordToken, set
           case LandingFormType.passwordConfirmation:
           case LandingFormType.passwordSetup:
             return 35;
+          case LandingFormType.contact:
+            return 24;
           case LandingFormType.login:
           case LandingFormType.registration:
           case LandingFormType.passwordReset:
@@ -86,6 +100,8 @@ export default function Landing({ laurusApi, resolution, resetPasswordToken, set
           case LandingFormType.passwordConfirmation:
           case LandingFormType.passwordSetup:
             return 33;
+          case LandingFormType.contact:
+            return 22;
           case LandingFormType.login:
           case LandingFormType.registration:
           case LandingFormType.passwordReset:
@@ -97,6 +113,8 @@ export default function Landing({ laurusApi, resolution, resetPasswordToken, set
         switch (formType) {
           case LandingFormType.passwordConfirmation:
           case LandingFormType.passwordSetup:
+          case LandingFormType.contact:
+            return 14;
           case LandingFormType.login:
           case LandingFormType.registration:
           case LandingFormType.passwordReset:
@@ -192,6 +210,19 @@ export default function Landing({ laurusApi, resolution, resetPasswordToken, set
                     />
                   </>
                 );
+              case LandingFormType.contact:
+                return (
+                  <>
+                    <ContactBody
+                      laurusApi={laurusApi}
+                      resolution={resolution}
+                      onNewFormType={(form) => {
+                        setNewUsername("");
+                        setFormType(form);
+                      }}
+                    />
+                  </>
+                );
               case LandingFormType.none:
                 return <></>;
             }
@@ -242,6 +273,23 @@ export default function Landing({ laurusApi, resolution, resetPasswordToken, set
                 }}
               >
                 {"reset password"}
+              </div>
+              <div
+                onClick={() => {
+                  void track(laurusApi, CONTACT_CLICK, window.location.pathname);
+                  setNewUsername("");
+                  setFormType(LandingFormType.contact);
+                }}
+                style={{
+                  cursor: "pointer",
+                  fontSize: 12,
+                  letterSpacing: "3px",
+                  textDecoration: "underline",
+                  textUnderlineOffset: 2,
+                  textDecorationColor: "rgba(255,255,255,0.4)",
+                }}
+              >
+                {"contact"}
               </div>
             </>
           ) : resolution.type == "low" ? (
@@ -1005,6 +1053,7 @@ function RegistrationBody({ laurusApi, resolution, onNewFormType, onNewUsername 
                 const register: Register_V1_0 = {
                   username,
                   email,
+                  visitor_id: currentVisitorId(),
                 };
                 buttonBorderRef.current = ButtonBorderColor.white;
                 setButtonBorder(ButtonBorderColor.white);
@@ -1279,6 +1328,7 @@ function PasswordResetBody({ laurusApi, resolution, onNewFormType }: PasswordRes
               const laurusUser: LaurusResetPassword = {
                 username,
                 email,
+                visitor_id: currentVisitorId(),
               };
               const response = await resetPassword(laurusApi, laurusUser);
               if (!response) {
@@ -1626,6 +1676,244 @@ function PasswordConfirmationBody({ token, mode, laurusApi, resolution, onNewFor
             }}
           >
             {"continue as a guest"}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+interface ContactBody {
+  laurusApi: string | undefined;
+  resolution: LaurusResolution;
+  onNewFormType: (newFormType: LandingFormType) => void;
+}
+function ContactBody({ laurusApi, resolution, onNewFormType }: ContactBody) {
+  const [email, setEmail] = useState<string>("");
+  const [message, setMessage] = useState<string>("");
+  const [msg, setMsg] = useState<string>("");
+  const buttonBorderRef = useRef<ButtonBorderColor>(ButtonBorderColor.primary);
+  const [buttonBorder, setButtonBorder] = useState<ButtonBorderColor>(ButtonBorderColor.primary);
+  const [sent, setSent] = useState<boolean>(false);
+  const [dynamicSizes] = useState(() => {
+    switch (resolution.type) {
+      case "high":
+        return {
+          input: { height: 50, fontSize: 14, padding: "8px 35px 8px 12px" },
+          textarea: { height: 140, fontSize: 14, padding: "12px" },
+        };
+      case "midhigh":
+        return {
+          input: { height: 50, fontSize: 12, padding: "8px 35px 8px 12px" },
+          textarea: { height: 140, fontSize: 12, padding: "12px" },
+        };
+      case "midlow":
+      case "low":
+        return {
+          input: { height: 50, fontSize: 11, padding: "8px 35px 8px 12px" },
+          textarea: { height: 140, fontSize: 11, padding: "12px" },
+        };
+    }
+  });
+  return (
+    <>
+      <div
+        style={{
+          display: "grid",
+          alignContent: "start",
+          justifyContent: "center",
+          position: "relative",
+          letterSpacing: "2px",
+          gap: 10,
+        }}
+      >
+        <div style={{ display: "grid", width: "100%", padding: 24 }}>
+          <div style={{ padding: "10px 0px" }}>
+            <LaurusText
+              scale={1}
+              color={{
+                a: "rgb(255, 255, 255)",
+                b: "rgb(190, 190, 190)",
+                c: "rgb(163, 163, 163)",
+                d: "rgb(255, 255, 255)",
+                e: "rgb(255, 255, 255)",
+                f: "rgb(199, 199, 199)",
+              }}
+            />
+          </div>
+          <div className={styles["animated-font"]} style={{ fontSize: 20, justifySelf: "center", padding: 4 }}>
+            <div>{"beta version"}</div>
+          </div>
+        </div>
+        <div style={{ display: "grid", gap: 12 }}>
+          <input
+            className={dellaRespira.className}
+            id="contact-email"
+            placeholder="email"
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(v) => {
+              setEmail(v.currentTarget.value);
+              setMsg("");
+              setSent(false);
+              buttonBorderRef.current = ButtonBorderColor.primary;
+              setButtonBorder(ButtonBorderColor.primary);
+            }}
+            style={{
+              ...dynamicSizes.input,
+              width: "100%",
+              borderRadius: 10,
+              border: "1px solid rgba(255, 255, 255, 0.1)",
+              background: "rgb(25, 25, 25)",
+              boxSizing: "border-box",
+              outline: "none",
+              letterSpacing: "1px",
+            }}
+            required
+          />
+          <textarea
+            className={dellaRespira.className}
+            id="contact-message"
+            placeholder="tell us what's on your mind..."
+            value={message}
+            maxLength={MAX_CONTACT_LENGTH}
+            onChange={(v) => {
+              setMessage(v.currentTarget.value);
+              setMsg("");
+              setSent(false);
+              buttonBorderRef.current = ButtonBorderColor.primary;
+              setButtonBorder(ButtonBorderColor.primary);
+            }}
+            style={{
+              ...dynamicSizes.textarea,
+              width: "100%",
+              borderRadius: 10,
+              border: "1px solid rgba(255, 255, 255, 0.1)",
+              background: "rgb(25, 25, 25)",
+              color: "rgb(227, 227, 227)",
+              boxSizing: "border-box",
+              outline: "none",
+              resize: "none",
+              letterSpacing: "1px",
+            }}
+            required
+          />
+          <div
+            className={
+              dellaRespira.className +
+              " " +
+              styles["glowing-border"] +
+              " " +
+              (buttonBorder == ButtonBorderColor.white ? "" : styles["animated-button-dark"])
+            }
+            onClick={async () => {
+              if (buttonBorder == ButtonBorderColor.white) return;
+              if (!email) {
+                setMsg("provide an email");
+                buttonBorderRef.current = ButtonBorderColor.red;
+                setButtonBorder(ButtonBorderColor.red);
+                return;
+              }
+              if (!message.trim()) {
+                setMsg("write something first");
+                buttonBorderRef.current = ButtonBorderColor.red;
+                setButtonBorder(ButtonBorderColor.red);
+                return;
+              }
+              const contact: LaurusContact = {
+                email,
+                message: message.trim(),
+                visitor_id: currentVisitorId(),
+              };
+              buttonBorderRef.current = ButtonBorderColor.white;
+              setButtonBorder(ButtonBorderColor.white);
+              setMsg("wait a sec");
+              const contactResult = await sendContact(laurusApi, contact);
+              if (!contactResult.success) {
+                buttonBorderRef.current = ButtonBorderColor.red;
+                setMsg(contactResult.message ? contactResult.message : LANDING_ERROR);
+                setButtonBorder(ButtonBorderColor.red);
+                return;
+              }
+              void track(laurusApi, CONTACT_MESSAGE, window.location.pathname);
+              setMessage("");
+              setSent(true);
+              setMsg("message sent");
+              buttonBorderRef.current = ButtonBorderColor.white;
+              setButtonBorder(ButtonBorderColor.white);
+            }}
+            style={
+              {
+                display: "grid",
+                border: "1px solid rgba(255, 255, 255, 0.1)",
+                borderRadius: 10,
+                height: 50,
+                padding: 10,
+                width: "100%",
+                fontSize: 13,
+                placeContent: "center",
+                cursor: buttonBorder == ButtonBorderColor.white ? (sent ? "default" : "progress") : "pointer",
+                "--color-primary": buttonBorderRecord[buttonBorder].p,
+                "--color-secondary": buttonBorderRecord[buttonBorder].s,
+                "--color-tertiary": buttonBorderRecord[buttonBorder].t,
+              } as React.CSSProperties
+            }
+          >
+            {msg ? msg : "send"}
+          </div>
+          <div
+            style={{
+              fontSize: 11,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <div
+              style={{
+                height: "1px",
+                width: "100%",
+                background: "rgba(255,255,255,0.05)",
+              }}
+            />
+            <div
+              style={{
+                padding: "0 8px",
+                display: "grid",
+                placeContent: "center",
+              }}
+            >
+              {"or"}
+            </div>
+            <div
+              style={{
+                height: "1px",
+                width: "100%",
+                background: "rgba(255,255,255,0.05)",
+              }}
+            />
+          </div>
+          <div
+            className={`${styles["animated-button-dark"]} ${dellaRespira.className}`}
+            onClick={() => {
+              setMsg("");
+              buttonBorderRef.current = ButtonBorderColor.primary;
+              setButtonBorder(ButtonBorderColor.primary);
+              onNewFormType(LandingFormType.login);
+            }}
+            style={{
+              display: "grid",
+              border: "1px solid rgba(255, 255, 255, 0.1)",
+              borderRadius: 10,
+              height: 50,
+              padding: 10,
+              width: "100%",
+              fontSize: 13,
+              placeContent: "center",
+            }}
+          >
+            {"return to login"}
           </div>
         </div>
       </div>

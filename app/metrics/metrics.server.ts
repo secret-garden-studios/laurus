@@ -30,6 +30,8 @@ export interface AnalyticsTotals_V1_0 {
   activated: number;
   full_access_clicks: number;
   account_requests: number;
+  contact_clicks: number;
+  contact_messages: number;
   bounced_sessions: number;
   bounce_rate: number;
   avg_session_seconds: number;
@@ -38,6 +40,8 @@ export interface AnalyticsTotals_V1_0 {
   activation_rate: number;
   full_access_rate: number;
   request_conversion_rate: number;
+  contact_rate: number;
+  contact_conversion_rate: number;
 }
 export interface AnalyticsActive_V1_0 {
   dau: number;
@@ -56,6 +60,8 @@ export interface AnalyticsSeriesPoint_V1_0 {
   activated: number;
   full_access_clicks: number;
   account_requests: number;
+  contact_clicks: number;
+  contact_messages: number;
 }
 export interface AnalyticsOverview_V1_0 {
   range: AnalyticsRange_V1_0;
@@ -182,12 +188,39 @@ export interface EmailCheckResult_V1_0 {
   message: string;
 }
 
+export interface BlockedEmail_V1_0 {
+  email: string;
+  reason: string | null;
+  blocked_at: string | null;
+  hits: number;
+  last_hit_at: string | null;
+  devices: number;
+}
+export interface ContactSender_V1_0 {
+  email: string;
+  messages: number;
+  devices: number;
+  last_sent_at: string | null;
+  blocked: boolean;
+}
+export interface ContactBlocks_V1_0 {
+  blocked: BlockedEmail_V1_0[];
+  senders: ContactSender_V1_0[];
+}
+export interface BlockEmailResult_V1_0 {
+  success: boolean;
+  message: string;
+  email: string;
+  devices: number;
+}
+
 export interface MetricsDependencies {
   overview: AnalyticsOverview_V1_0 | undefined;
   retention: AnalyticsRetention_V1_0 | undefined;
   breakdowns: AnalyticsBreakdowns_V1_0 | undefined;
   users: AnalyticsUsersReport_V1_0 | undefined;
   accounts: ManagedAccounts_V1_0 | undefined;
+  blocks: ContactBlocks_V1_0 | undefined;
 }
 
 export const RANGE_OPTIONS = [7, 30, 90] as const;
@@ -324,6 +357,35 @@ export async function setAccountRole(
   );
 }
 
+export async function getContactBlocks(
+  baseUrl: string | undefined,
+  accessToken: string | undefined,
+): Promise<ContactBlocks_V1_0 | undefined> {
+  return getJson<ContactBlocks_V1_0>(baseUrl, accessToken, `${baseUrl}/contact/blocks`);
+}
+
+export async function blockEmail(
+  baseUrl: string | undefined,
+  accessToken: string | undefined,
+  email: string,
+  reason: string,
+): Promise<BlockEmailResult_V1_0 | undefined> {
+  return postJson<BlockEmailResult_V1_0>(
+    baseUrl,
+    accessToken,
+    `${baseUrl}/contact/block`,
+    JSON.stringify({ email, reason: reason ? reason : null }),
+  );
+}
+
+export async function unblockEmail(
+  baseUrl: string | undefined,
+  accessToken: string | undefined,
+  email: string,
+): Promise<BlockEmailResult_V1_0 | undefined> {
+  return postJson<BlockEmailResult_V1_0>(baseUrl, accessToken, `${baseUrl}/contact/unblock`, JSON.stringify({ email }));
+}
+
 export async function checkEmailDelivery(
   baseUrl: string | undefined,
   accessToken: string | undefined,
@@ -336,12 +398,13 @@ export async function getMetrics(
   accessToken: string | undefined,
   days: number,
 ): Promise<MetricsDependencies> {
-  const [overview, retention, breakdowns, users, accounts] = await Promise.all([
+  const [overview, retention, breakdowns, users, accounts, blocks] = await Promise.all([
     getOverview(baseUrl, accessToken, days),
     getRetention(baseUrl, accessToken, RETENTION_WEEKS),
     getBreakdowns(baseUrl, accessToken, days, BREAKDOWN_LIMIT),
     getUsersReport(baseUrl, accessToken, days, BREAKDOWN_LIMIT),
     getAccounts(baseUrl, accessToken),
+    getContactBlocks(baseUrl, accessToken),
   ]);
-  return { overview, retention, breakdowns, users, accounts };
+  return { overview, retention, breakdowns, users, accounts, blocks };
 }

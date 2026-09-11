@@ -18,6 +18,7 @@ export const AWAITING_APPROVAL_ERROR = "awaiting approval";
 export const TOO_MANY_ERROR = "too many requests";
 export const PASSWORD_LENGTH_ERROR = "8 characters or more";
 export const MIN_PASSWORD_LENGTH = 8;
+export const MAX_CONTACT_LENGTH = 4000;
 export const UNAUTHORIZED_EDIT = "You need to be logged in to do that!";
 export const FORBIDDEN_ACTION = "You don't have permission to do that!";
 export const FORBIDDEN_NAV = "You shouldn't be on this page!";
@@ -56,6 +57,7 @@ export async function authFetch(
 export interface Register_V1_0 {
   username: string;
   email: string;
+  visitor_id: string | null;
 }
 export interface RegisterResult_V1_0 {
   success: boolean;
@@ -74,6 +76,7 @@ export type LaurusResetPassword = ResetPassword_V1_0;
 export interface ResetPassword_V1_0 {
   username: string;
   email: string;
+  visitor_id: string | null;
 }
 export interface ResetPasswordResult_V1_0 {
   success: boolean;
@@ -298,5 +301,48 @@ export async function setPassword(
   } catch (error) {
     console.log({ error });
     return false;
+  }
+}
+
+export type LaurusContact = Contact_V1_0;
+export interface Contact_V1_0 {
+  email: string;
+  message: string;
+  visitor_id: string | null;
+}
+export interface ContactResult_V1_0 {
+  success: boolean;
+  message: string;
+}
+export async function sendContact(baseUrl: string | undefined, contact: Contact_V1_0): Promise<ContactResult_V1_0> {
+  try {
+    const url = `${baseUrl}/contact`;
+    const raw_response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(contact),
+    });
+
+    if (!raw_response.ok) {
+      if (raw_response.status == 429) {
+        return { success: false, message: TOO_MANY_ERROR };
+      }
+      if (raw_response.status == 422) {
+        const errorData = await raw_response.json();
+        const emailError = errorData.errors?.find((e: ValidationError_V1_0) => e.field === "email");
+        if (emailError) {
+          return { success: false, message: EMAIL_ERROR };
+        }
+      }
+      return { success: false, message: LANDING_ERROR };
+    }
+
+    const response: ContactResult_V1_0 = await raw_response.json();
+    return response;
+  } catch (error) {
+    console.log({ error });
+    return { success: false, message: LANDING_ERROR };
   }
 }
