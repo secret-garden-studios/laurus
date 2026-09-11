@@ -2,7 +2,7 @@
 import { usePathname } from "next/navigation";
 import { LaurusResolution } from "./landing.boot";
 import { useRouter } from "next/navigation";
-import { accountBox200, cardsStack200, desktopMac300 } from "./svg-repo";
+import { accountBox200, cardsStack200, desktopMac300, finance200 } from "./svg-repo";
 import ToolbarButton from "./components/toolbar-button";
 import { useContext, useRef } from "react";
 import { CoreContext } from "./workspace/workspace.client";
@@ -10,8 +10,9 @@ import { CoreContext } from "./workspace/workspace.client";
 interface Navbar {
   resolution: LaurusResolution;
   guest: boolean;
+  admin?: boolean;
 }
-export default function Navbar({ resolution, guest }: Navbar) {
+export default function Navbar({ resolution, guest, admin }: Navbar) {
   const router = useRouter();
   const pathname = usePathname();
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -59,6 +60,22 @@ export default function Navbar({ resolution, guest }: Navbar) {
         resolution={resolution}
         title="workspace"
       />
+      {admin && (
+        <ToolbarButton
+          selected={pathname == "/metrics"}
+          svg={{ svg: finance200(), scale: 0.6, cursor: "" }}
+          onClick={() => {
+            if (pathname == "/metrics") return;
+            if (containerRef.current) {
+              containerRef.current.style.cursor = "wait";
+            }
+            cancelFrameDownload();
+            router.push("/metrics");
+          }}
+          resolution={resolution}
+          title="metrics"
+        />
+      )}
     </div>
   );
 }

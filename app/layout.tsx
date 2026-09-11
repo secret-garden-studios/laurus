@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { dellaRespira } from "./fonts";
+import AnalyticsTracker from "./analytics/analytics-tracker";
 
 export const metadata: Metadata = {
   title: "Laurus",
@@ -17,7 +18,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={dellaRespira.variable}>
-      <body className={dellaRespira.className}>{children}</body>
+      <body className={dellaRespira.className}>
+        {children}
+        <AnalyticsTracker apiOrigin={process.env.LAURUS_API} />
+      </body>
     </html>
   );
 }

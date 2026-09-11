@@ -80,7 +80,7 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
           cursor: "default",
         }}
       >
-        <Navbar resolution={{ ...uiState.resolution }} guest={!me} />
+        <Navbar resolution={{ ...uiState.resolution }} guest={!me} admin={me?.role === "admin"} />
         <div
           style={{
             display: "grid",
