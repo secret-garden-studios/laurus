@@ -102,36 +102,36 @@ export default function Landing({ laurusApi, resolution, resetPasswordToken, set
       }
       case "midhigh": {
         const vhPercentage: LandingVhPercentage = {
-          [LandingFormType.login]: 28,
-          [LandingFormType.registration]: 28,
-          [LandingFormType.passwordReset]: 28,
-          [LandingFormType.passwordConfirmation]: 33,
-          [LandingFormType.passwordSetup]: 33,
-          [LandingFormType.contact]: 22,
-          [LandingFormType.none]: 28,
+          [LandingFormType.login]: 24,
+          [LandingFormType.registration]: 24,
+          [LandingFormType.passwordReset]: 24,
+          [LandingFormType.passwordConfirmation]: 28,
+          [LandingFormType.passwordSetup]: 28,
+          [LandingFormType.contact]: 19,
+          [LandingFormType.none]: 24,
         };
         return {
           container: { vhPercentage },
-          footer: { padding: 20, gap: 12 },
-          link: { fontSize: 12, letterSpacing: 3, textUnderlineOffset: 2 },
-          notice: { fontSize: 12, letterSpacing: 3 },
+          footer: { padding: 17, gap: 10 },
+          link: { fontSize: 10, letterSpacing: 3, textUnderlineOffset: 2 },
+          notice: { fontSize: 10, letterSpacing: 3 },
         };
       }
       case "midlow": {
         const vhPercentage: LandingVhPercentage = {
-          [LandingFormType.login]: 20,
-          [LandingFormType.registration]: 20,
-          [LandingFormType.passwordReset]: 20,
-          [LandingFormType.passwordConfirmation]: 14,
-          [LandingFormType.passwordSetup]: 14,
-          [LandingFormType.contact]: 14,
-          [LandingFormType.none]: 20,
+          [LandingFormType.login]: 17,
+          [LandingFormType.registration]: 17,
+          [LandingFormType.passwordReset]: 17,
+          [LandingFormType.passwordConfirmation]: 12,
+          [LandingFormType.passwordSetup]: 12,
+          [LandingFormType.contact]: 12,
+          [LandingFormType.none]: 17,
         };
         return {
           container: { vhPercentage },
-          footer: { padding: 20, gap: 12 },
-          link: { fontSize: 12, letterSpacing: 3, textUnderlineOffset: 2 },
-          notice: { fontSize: 12, letterSpacing: 3 },
+          footer: { padding: 17, gap: 10 },
+          link: { fontSize: 10, letterSpacing: 3, textUnderlineOffset: 2 },
+          notice: { fontSize: 10, letterSpacing: 3 },
         };
       }
       case "low": {
@@ -146,9 +146,9 @@ export default function Landing({ laurusApi, resolution, resetPasswordToken, set
         };
         return {
           container: { vhPercentage },
-          footer: { padding: 20, gap: 12 },
-          link: { fontSize: 12, letterSpacing: 3, textUnderlineOffset: 2 },
-          notice: { fontSize: 12, letterSpacing: 3 },
+          footer: { padding: 17, gap: 10 },
+          link: { fontSize: 10, letterSpacing: 3, textUnderlineOffset: 2 },
+          notice: { fontSize: 10, letterSpacing: 3 },
         };
       }
     }
@@ -669,8 +669,8 @@ function LaurusSvgDef({ ids, color, durations }: LaurusSvgDef) {
 
 function LowResBody() {
   const [dynamicSizes] = useState(() => ({
-    body: { gap: 10, letterSpacing: 2 },
-    header: { padding: 24, laurusPadding: "10px 0px", laurusScale: 1, betaFontSize: 20, betaPadding: 4 },
+    body: { gap: 9, letterSpacing: 2 },
+    header: { padding: 20, laurusPadding: "9px 0px", laurusScale: 0.85, betaFontSize: 17, betaPadding: 3 },
   }));
   return (
     <>
@@ -741,26 +741,26 @@ function LoginBody({ laurusApi, resolution, newUsername }: LoginBody) {
         };
       case "midhigh":
         return {
-          body: { gap: 10, letterSpacing: 2 },
-          header: { padding: 24, laurusPadding: "10px 0px", laurusScale: 1, betaFontSize: 20, betaPadding: 4 },
-          form: { gap: 12 },
-          input: { height: 50, fontSize: 12, padding: "8px 35px 8px 12px", borderRadius: 10 },
-          button: { height: 50, padding: 10, fontSize: 13, borderRadius: 10 },
-          divider: { fontSize: 11, ruleHeight: 1, labelPadding: "0 8px" },
-          passwordField: { gap: 8 },
-          visibilityToggle: { right: 8, svgSize: { width: 20, height: 20 }, svgScale: 1 },
+          body: { gap: 9, letterSpacing: 2 },
+          header: { padding: 20, laurusPadding: "9px 0px", laurusScale: 0.85, betaFontSize: 17, betaPadding: 3 },
+          form: { gap: 10 },
+          input: { height: 43, fontSize: 10, padding: "7px 30px 7px 10px", borderRadius: 9 },
+          button: { height: 43, padding: 9, fontSize: 11, borderRadius: 9 },
+          divider: { fontSize: 9, ruleHeight: 1, labelPadding: "0 7px" },
+          passwordField: { gap: 7 },
+          visibilityToggle: { right: 7, svgSize: { width: 17, height: 17 }, svgScale: 0.85 },
         };
       case "midlow":
       case "low":
         return {
-          body: { gap: 10, letterSpacing: 2 },
-          header: { padding: 24, laurusPadding: "10px 0px", laurusScale: 1, betaFontSize: 20, betaPadding: 4 },
-          form: { gap: 12 },
-          input: { height: 50, fontSize: 12, padding: "8px 35px 8px 12px", borderRadius: 10 },
-          button: { height: 50, padding: 10, fontSize: 13, borderRadius: 10 },
-          divider: { fontSize: 11, ruleHeight: 1, labelPadding: "0 8px" },
-          passwordField: { gap: 8 },
-          visibilityToggle: { right: 8, svgSize: { width: 20, height: 20 }, svgScale: 1 },
+          body: { gap: 9, letterSpacing: 2 },
+          header: { padding: 20, laurusPadding: "9px 0px", laurusScale: 0.85, betaFontSize: 17, betaPadding: 3 },
+          form: { gap: 10 },
+          input: { height: 43, fontSize: 10, padding: "7px 30px 7px 10px", borderRadius: 9 },
+          button: { height: 43, padding: 9, fontSize: 11, borderRadius: 9 },
+          divider: { fontSize: 9, ruleHeight: 1, labelPadding: "0 7px" },
+          passwordField: { gap: 7 },
+          visibilityToggle: { right: 7, svgSize: { width: 17, height: 17 }, svgScale: 0.85 },
         };
     }
   });
@@ -1023,22 +1023,22 @@ function RegistrationBody({ laurusApi, resolution, onNewFormType, onNewUsername 
         };
       case "midhigh":
         return {
-          body: { gap: 10, letterSpacing: 2 },
-          header: { padding: 24, laurusPadding: "10px 0px", laurusScale: 1, betaFontSize: 20, betaPadding: 4 },
-          form: { gap: 12 },
-          input: { height: 50, fontSize: 12, padding: "8px 35px 8px 12px", borderRadius: 10 },
-          button: { height: 50, padding: 10, fontSize: 13, borderRadius: 10 },
-          divider: { fontSize: 11, ruleHeight: 1, labelPadding: "0 8px" },
+          body: { gap: 9, letterSpacing: 2 },
+          header: { padding: 20, laurusPadding: "9px 0px", laurusScale: 0.85, betaFontSize: 17, betaPadding: 3 },
+          form: { gap: 10 },
+          input: { height: 43, fontSize: 10, padding: "7px 30px 7px 10px", borderRadius: 9 },
+          button: { height: 43, padding: 9, fontSize: 11, borderRadius: 9 },
+          divider: { fontSize: 9, ruleHeight: 1, labelPadding: "0 7px" },
         };
       case "midlow":
       case "low":
         return {
-          body: { gap: 10, letterSpacing: 2 },
-          header: { padding: 24, laurusPadding: "10px 0px", laurusScale: 1, betaFontSize: 20, betaPadding: 4 },
-          form: { gap: 12 },
-          input: { height: 50, fontSize: 11, padding: "8px 35px 8px 12px", borderRadius: 10 },
-          button: { height: 50, padding: 10, fontSize: 13, borderRadius: 10 },
-          divider: { fontSize: 11, ruleHeight: 1, labelPadding: "0 8px" },
+          body: { gap: 9, letterSpacing: 2 },
+          header: { padding: 20, laurusPadding: "9px 0px", laurusScale: 0.85, betaFontSize: 17, betaPadding: 3 },
+          form: { gap: 10 },
+          input: { height: 43, fontSize: 9, padding: "7px 30px 7px 10px", borderRadius: 9 },
+          button: { height: 43, padding: 9, fontSize: 11, borderRadius: 9 },
+          divider: { fontSize: 9, ruleHeight: 1, labelPadding: "0 7px" },
         };
     }
   });
@@ -1290,22 +1290,22 @@ function PasswordResetBody({ laurusApi, resolution, onNewFormType }: PasswordRes
         };
       case "midhigh":
         return {
-          body: { gap: 10, letterSpacing: 2 },
-          header: { padding: 24, laurusPadding: "10px 0px", laurusScale: 1, betaFontSize: 20, betaPadding: 4 },
-          form: { gap: 12 },
-          input: { height: 50, fontSize: 12, padding: "8px 35px 8px 12px", borderRadius: 10 },
-          button: { height: 50, padding: 10, fontSize: 13, borderRadius: 10 },
-          divider: { fontSize: 11, ruleHeight: 1, labelPadding: "0 8px" },
+          body: { gap: 9, letterSpacing: 2 },
+          header: { padding: 20, laurusPadding: "9px 0px", laurusScale: 0.85, betaFontSize: 17, betaPadding: 3 },
+          form: { gap: 10 },
+          input: { height: 43, fontSize: 10, padding: "7px 30px 7px 10px", borderRadius: 9 },
+          button: { height: 43, padding: 9, fontSize: 11, borderRadius: 9 },
+          divider: { fontSize: 9, ruleHeight: 1, labelPadding: "0 7px" },
         };
       case "midlow":
       case "low":
         return {
-          body: { gap: 10, letterSpacing: 2 },
-          header: { padding: 24, laurusPadding: "10px 0px", laurusScale: 1, betaFontSize: 20, betaPadding: 4 },
-          form: { gap: 12 },
-          input: { height: 50, fontSize: 12, padding: "8px 35px 8px 12px", borderRadius: 10 },
-          button: { height: 50, padding: 10, fontSize: 13, borderRadius: 10 },
-          divider: { fontSize: 11, ruleHeight: 1, labelPadding: "0 8px" },
+          body: { gap: 9, letterSpacing: 2 },
+          header: { padding: 20, laurusPadding: "9px 0px", laurusScale: 0.85, betaFontSize: 17, betaPadding: 3 },
+          form: { gap: 10 },
+          input: { height: 43, fontSize: 10, padding: "7px 30px 7px 10px", borderRadius: 9 },
+          button: { height: 43, padding: 9, fontSize: 11, borderRadius: 9 },
+          divider: { fontSize: 9, ruleHeight: 1, labelPadding: "0 7px" },
         };
     }
   });
@@ -1578,26 +1578,26 @@ function PasswordConfirmationBody({ token, mode, laurusApi, resolution, onNewFor
         };
       case "midhigh":
         return {
-          body: { gap: 10, letterSpacing: 2 },
-          header: { padding: 24, laurusPadding: "10px 0px", laurusScale: 1, betaFontSize: 20, betaPadding: 4 },
-          form: { gap: 12 },
-          input: { height: 50, fontSize: 12, padding: "8px 35px 8px 12px", borderRadius: 10 },
-          button: { height: 50, padding: 10, fontSize: 13, borderRadius: 10 },
-          divider: { fontSize: 11, ruleHeight: 1, labelPadding: "0 8px" },
-          passwordField: { gap: 8 },
-          visibilityToggle: { right: 8, svgSize: { width: 20, height: 20 }, svgScale: 1 },
+          body: { gap: 9, letterSpacing: 2 },
+          header: { padding: 20, laurusPadding: "9px 0px", laurusScale: 0.85, betaFontSize: 17, betaPadding: 3 },
+          form: { gap: 10 },
+          input: { height: 43, fontSize: 10, padding: "7px 30px 7px 10px", borderRadius: 9 },
+          button: { height: 43, padding: 9, fontSize: 11, borderRadius: 9 },
+          divider: { fontSize: 9, ruleHeight: 1, labelPadding: "0 7px" },
+          passwordField: { gap: 7 },
+          visibilityToggle: { right: 7, svgSize: { width: 17, height: 17 }, svgScale: 0.85 },
         };
       case "midlow":
       case "low":
         return {
-          body: { gap: 10, letterSpacing: 2 },
-          header: { padding: 24, laurusPadding: "10px 0px", laurusScale: 1, betaFontSize: 20, betaPadding: 4 },
-          form: { gap: 12 },
-          input: { height: 50, fontSize: 12, padding: "8px 35px 8px 12px", borderRadius: 10 },
-          button: { height: 50, padding: 10, fontSize: 13, borderRadius: 10 },
-          divider: { fontSize: 11, ruleHeight: 1, labelPadding: "0 8px" },
-          passwordField: { gap: 8 },
-          visibilityToggle: { right: 8, svgSize: { width: 20, height: 20 }, svgScale: 1 },
+          body: { gap: 9, letterSpacing: 2 },
+          header: { padding: 20, laurusPadding: "9px 0px", laurusScale: 0.85, betaFontSize: 17, betaPadding: 3 },
+          form: { gap: 10 },
+          input: { height: 43, fontSize: 10, padding: "7px 30px 7px 10px", borderRadius: 9 },
+          button: { height: 43, padding: 9, fontSize: 11, borderRadius: 9 },
+          divider: { fontSize: 9, ruleHeight: 1, labelPadding: "0 7px" },
+          passwordField: { gap: 7 },
+          visibilityToggle: { right: 7, svgSize: { width: 17, height: 17 }, svgScale: 0.85 },
         };
     }
   });
@@ -1853,24 +1853,24 @@ function ContactBody({ laurusApi, resolution, onNewFormType }: ContactBody) {
         };
       case "midhigh":
         return {
-          body: { gap: 10, letterSpacing: 2 },
-          header: { padding: 24, laurusPadding: "10px 0px", laurusScale: 1, betaFontSize: 20, betaPadding: 4 },
-          form: { gap: 12 },
-          input: { height: 50, fontSize: 12, padding: "8px 35px 8px 12px", borderRadius: 10, letterSpacing: 1 },
-          textarea: { height: 140, fontSize: 12, padding: "12px", borderRadius: 10, letterSpacing: 1 },
-          button: { height: 50, padding: 10, fontSize: 13, borderRadius: 10 },
-          divider: { fontSize: 11, ruleHeight: 1, labelPadding: "0 8px" },
+          body: { gap: 9, letterSpacing: 2 },
+          header: { padding: 20, laurusPadding: "9px 0px", laurusScale: 0.85, betaFontSize: 17, betaPadding: 3 },
+          form: { gap: 10 },
+          input: { height: 43, fontSize: 10, padding: "7px 30px 7px 10px", borderRadius: 9, letterSpacing: 1 },
+          textarea: { height: 119, fontSize: 10, padding: "10px", borderRadius: 9, letterSpacing: 1 },
+          button: { height: 43, padding: 9, fontSize: 11, borderRadius: 9 },
+          divider: { fontSize: 9, ruleHeight: 1, labelPadding: "0 7px" },
         };
       case "midlow":
       case "low":
         return {
-          body: { gap: 10, letterSpacing: 2 },
-          header: { padding: 24, laurusPadding: "10px 0px", laurusScale: 1, betaFontSize: 20, betaPadding: 4 },
-          form: { gap: 12 },
-          input: { height: 50, fontSize: 11, padding: "8px 35px 8px 12px", borderRadius: 10, letterSpacing: 1 },
-          textarea: { height: 140, fontSize: 11, padding: "12px", borderRadius: 10, letterSpacing: 1 },
-          button: { height: 50, padding: 10, fontSize: 13, borderRadius: 10 },
-          divider: { fontSize: 11, ruleHeight: 1, labelPadding: "0 8px" },
+          body: { gap: 9, letterSpacing: 2 },
+          header: { padding: 20, laurusPadding: "9px 0px", laurusScale: 0.85, betaFontSize: 17, betaPadding: 3 },
+          form: { gap: 10 },
+          input: { height: 43, fontSize: 9, padding: "7px 30px 7px 10px", borderRadius: 9, letterSpacing: 1 },
+          textarea: { height: 119, fontSize: 9, padding: "10px", borderRadius: 9, letterSpacing: 1 },
+          button: { height: 43, padding: 9, fontSize: 11, borderRadius: 9 },
+          divider: { fontSize: 9, ruleHeight: 1, labelPadding: "0 7px" },
         };
     }
   });
