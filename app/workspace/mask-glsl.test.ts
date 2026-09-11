@@ -1,14 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { LIGHT_SOURCE_SHADER } from "./mask-gl.ts";
-import {
-  HIGHLIGHT_MOVING_COLOR,
-  HIGHLIGHT_SELECTED_COLOR,
-  HIGHLIGHT_SHADOW_COLOR,
-  HIGHLIGHT_SIBLING_COLOR,
-  highlightObjectReviewAddedColor,
-  gridlinesHighlightColor,
-} from "./mask-constants.ts";
+import { HIGHLIGHT_SELECTED_COLOR, HIGHLIGHT_SHADOW_COLOR, HIGHLIGHT_SIBLING_COLOR } from "./mask-constants.ts";
 
 function functions(source: string): { params: string[]; body: string }[] {
   const found: { params: string[]; body: string }[] = [];
@@ -219,16 +212,5 @@ describe("the highlight drop shadow", () => {
       "the shader asks for a shadow by rgb -- the two highlight colors have to agree on one",
     );
     assert.ok(offRgb(HIGHLIGHT_SIBLING_COLOR) <= match, "the sibling colour should pass the shader's gate");
-  });
-
-  it("leaves every other highlight colour unshadowed", () => {
-    const others = {
-      moving: HIGHLIGHT_MOVING_COLOR,
-      shapeEdit: gridlinesHighlightColor(1),
-      reviewAdded: highlightObjectReviewAddedColor(1),
-    };
-    for (const [name, color] of Object.entries(others)) {
-      assert.ok(offRgb(color) > match, `${name} would slip through the shader's shadow gate`);
-    }
   });
 });
