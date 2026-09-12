@@ -1,6 +1,7 @@
 import {
   forgetAccessToken,
   freshAccessToken,
+  isTransientStatus,
   LaurusToken,
   rememberAccessToken,
   renewRefusedAccessToken,
@@ -151,38 +152,49 @@ function loginError(status: number): string {
   }
 }
 
-export async function login(baseUrl: string | undefined, username: string, password: string): Promise<LaurusToken> {
-  const formData = new URLSearchParams();
-  formData.append("username", username);
-  formData.append("password", password);
-  formData.append("grant_type", "password");
-  const url = `${baseUrl}/login`;
+interface LoginAttempt {
+  token: Token_V1_0 | undefined;
+  message: string;
+  transient: boolean;
+}
+
+async function postLogin(baseUrl: string | undefined, formData: URLSearchParams): Promise<LoginAttempt> {
   try {
-    const raw_response = await fetch(url, {
+    const raw_response = await fetch(`${baseUrl}/login`, {
       method: "POST",
       credentials: "include",
       body: formData,
     });
     if (!raw_response.ok) {
       return {
-        success: false,
+        token: undefined,
         message: loginError(raw_response.status),
-        access_token: "",
-        token_type: "",
+        transient: isTransientStatus(raw_response.status),
       };
     }
     const response: Token_V1_0 = await raw_response.json();
-    rememberAccessToken(response.access_token);
-    return { ...response, success: true, message: "" };
+    return { token: response, message: "", transient: false };
   } catch (error) {
     console.log(error);
-    return {
-      success: false,
-      message: "unknown error",
-      access_token: "",
-      token_type: "",
-    };
+    return { token: undefined, message: "unknown error", transient: true };
   }
+}
+
+export async function login(baseUrl: string | undefined, username: string, password: string): Promise<LaurusToken> {
+  const formData = new URLSearchParams();
+  formData.append("username", username);
+  formData.append("password", password);
+  formData.append("grant_type", "password");
+
+  let attempt = await postLogin(baseUrl, formData);
+  if (!attempt.token && attempt.transient) {
+    attempt = await postLogin(baseUrl, formData);
+  }
+  if (!attempt.token) {
+    return { success: false, message: attempt.message, access_token: "", token_type: "" };
+  }
+  rememberAccessToken(attempt.token.access_token);
+  return { ...attempt.token, success: true, message: "" };
 }
 
 export async function logout(baseUrl: string | undefined): Promise<boolean> {

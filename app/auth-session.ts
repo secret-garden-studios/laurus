@@ -15,6 +15,11 @@ let sessionEnded = false;
 
 const EXPIRY_SKEW_SECONDS = 30;
 const RENEW_LEAD_SECONDS = 90;
+const TRANSIENT_ATTEMPTS = 2;
+
+export function isTransientStatus(status: number): boolean {
+  return status === 408 || status >= 500;
+}
 
 function tokenExpirySeconds(token: string): number | undefined {
   const payload = token.split(".")[1];
@@ -95,10 +100,19 @@ async function postRefresh(baseUrl: string | undefined): Promise<RefreshOutcome>
   }
 }
 
+async function postRefreshWithRetry(baseUrl: string | undefined): Promise<RefreshOutcome> {
+  let outcome: RefreshOutcome = { token: undefined, ended: false };
+  for (let attempt = 0; attempt < TRANSIENT_ATTEMPTS; attempt++) {
+    outcome = await postRefresh(baseUrl);
+    if (outcome.token || outcome.ended) return outcome;
+  }
+  return outcome;
+}
+
 export function renewAccessToken(baseUrl: string | undefined): Promise<string | undefined> {
   if (!inBrowser) return Promise.resolve(undefined);
   if (!refreshInFlight) {
-    refreshInFlight = postRefresh(baseUrl)
+    refreshInFlight = postRefreshWithRetry(baseUrl)
       .then(({ token, ended }) => {
         if (token) {
           browserAccessToken = token;
@@ -140,21 +154,32 @@ export async function renewRefusedAccessToken(
   return renewAccessToken(baseUrl);
 }
 
-export async function exchangeRefreshCookie(
-  baseUrl: string | undefined,
-  refreshToken: string,
-): Promise<string | undefined> {
+async function postToken(baseUrl: string | undefined, refreshToken: string): Promise<RefreshOutcome> {
   try {
     const raw_response = await fetch(`${baseUrl}/token`, {
       method: "POST",
       headers: { Cookie: `refresh_token=${refreshToken}` },
       cache: "no-store",
     });
-    if (!raw_response.ok) return undefined;
+    if (!raw_response.ok) {
+      return { token: undefined, ended: !isTransientStatus(raw_response.status) };
+    }
     const response: Token_V1_0 = await raw_response.json();
-    return response.access_token;
+    return { token: response.access_token, ended: false };
   } catch (error) {
     console.log({ error });
-    return undefined;
+    return { token: undefined, ended: false };
   }
+}
+
+export async function exchangeRefreshCookie(
+  baseUrl: string | undefined,
+  refreshToken: string,
+): Promise<string | undefined> {
+  for (let attempt = 0; attempt < TRANSIENT_ATTEMPTS; attempt++) {
+    const { token, ended } = await postToken(baseUrl, refreshToken);
+    if (token) return token;
+    if (ended) return undefined;
+  }
+  return undefined;
 }
