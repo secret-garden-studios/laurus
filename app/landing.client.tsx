@@ -444,7 +444,7 @@ function LandingForm({
   const primaryState = (() => {
     switch (formType) {
       case LandingFormType.login:
-        return { guard: false, dimmed: false, cursor: "pointer" };
+        return { guard: busy, dimmed: false, cursor: busy ? "progress" : "pointer" };
       case LandingFormType.passwordReset:
         return { guard: isRunning, dimmed: isRunning, cursor: isRunning ? "" : "pointer" };
       case LandingFormType.passwordConfirmation:
@@ -463,6 +463,7 @@ function LandingForm({
       case LandingFormType.login: {
         if (!values.username) return reject("provide a username");
         if (!values.password) return reject("provide a password");
+        setBorder(ButtonBorderColor.white);
         const loginResult = await login(laurusApi, values.username, values.password);
         if (!loginResult.success) {
           return reject(
